@@ -935,14 +935,14 @@ textarea { resize: vertical; min-height: 88px; line-height: 1.8; }
   flex: 1 0 auto;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  padding: calc(18px + env(safe-area-inset-top)) 24px 18px;
+  padding: calc(clamp(20px, 7dvh, 72px) + env(safe-area-inset-top)) 24px 18px;
   color: #fff; text-align: center;
   transition: padding-bottom var(--t);
 }
 /* 폼이 올라온 뒤 — 말씀을 보이는 상단 영역(~40dvh) 세로 중앙에 배치 */
 .login-page.entered .login-hero {
   height: 40dvh; flex: 0 0 auto;
-  padding-top: 0; padding-bottom: 30px;
+  padding-top: calc(20px + env(safe-area-inset-top)); padding-bottom: 30px;
 }
 /* 입장 버튼 — 배경 위 가운데, 숨쉬듯 느린 호흡으로 누를 수 있음을 알린다 */
 .login-cta {
@@ -986,6 +986,13 @@ textarea { resize: vertical; min-height: 88px; line-height: 1.8; }
   display: block; margin-top: 12px;
   font-size: var(--fs-sm); font-weight: 400; letter-spacing: 0.14em;
   color: rgba(0, 0, 0, 0.6);
+}
+/* 소형 화면(iPhone 13 mini 등) — 간격·폰트 압축 */
+@media (max-height: 750px) {
+  .login-brand { margin: 10px auto; font-size: var(--fs-xl); }
+  .login-verse { font-size: var(--fs-md); line-height: 1.7; margin: 10px auto 0; }
+  .login-verse .ref { margin-top: 8px; }
+  .login-cta { margin-top: 28px; }
 }
 .login-card {
   position: fixed; left: 0; right: 0; bottom: 0;
