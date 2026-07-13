@@ -47,36 +47,6 @@
   --vis-group: #7d4aa8;    /* 나눔 공동체와 공유 — 바이올렛 */
   --vis-users: #c14e42;    /* 개인 공유 — 코랄 */
 }
-[data-theme='dark'] {
-  color-scheme: dark;
-  --brand: #9dbde3;
-  --sage: #58708c;
-  --gray: #97917f;
-  --bg: #17181c;
-  --card: #212227;
-  --ink: #f0ede4;
-  --ink-soft: #a5a8ad;
-  --line: #33353c;
-  --danger: #d68a77;
-  --alert: #dc4630;
-  --like: #f58281;
-  --shadow: 0 6px 22px rgba(0, 0, 0, 0.4);
-  --lime: #b6d44e;
-  --lav: #cfa3e0;
-  --pop: #e8a049;
-  --pink: #dfa8bb;
-  --sky: #8fb8d4;
-  --peach: #d4a87a;
-  --mint: #7cc4a0;
-  --coral: #d47c7c;
-  --butter: #d4b86a;
-  --iris: #9a8ec8;
-  --sage-p: #96b880;
-  --accent-ink: #26291d;
-  --vis-cell: #7cc496;
-  --vis-group: #bd97dd;
-  --vis-users: #eda269;
-}
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body, #root { height: 100%; }

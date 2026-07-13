@@ -20,7 +20,6 @@ export const useApp = () => useContext(Ctx);
 export default function App() {
   const [session, setSession] = useState(undefined); // undefined = 로딩 중
   const [profile, setProfile] = useState(null);
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'system');
   const [online, setOnline] = useState(navigator.onLine);
   const [unread, setUnread] = useState(0);
   const [recovery, setRecovery] = useState(false);
@@ -28,22 +27,6 @@ export default function App() {
   const reminderShown = useRef('');
   const hadSession = useRef(false);
   const navigate = useNavigate();
-
-  // 테마 적용 (시스템 연동 또는 수동)
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const apply = () => {
-      const dark = theme === 'dark' || (theme === 'system' && mq.matches);
-      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-      // 브라우저 상단 색을 배경색과 맞춘다 (styles.css --bg와 동일)
-      document.querySelector('meta[name="theme-color"]')
-        ?.setAttribute('content', dark ? '#17181c' : '#F5F5F5');
-    };
-    apply();
-    localStorage.setItem('theme', theme);
-    mq.addEventListener('change', apply);
-    return () => mq.removeEventListener('change', apply);
-  }, [theme]);
 
   // 인증 세션
   useEffect(() => {
@@ -221,7 +204,7 @@ export default function App() {
   const isAdmin = Boolean(profile?.is_admin);
 
   return (
-    <Ctx.Provider value={{ session, profile, reloadProfile: loadProfile, theme, setTheme, online, unread, loadUnread, teams, loadTeams, feedNew, markFeedSeen }}>
+    <Ctx.Provider value={{ session, profile, reloadProfile: loadProfile, online, unread, loadUnread, teams, loadTeams, feedNew, markFeedSeen }}>
       <div className="app">
         {!online && <div className="offline-bar">오프라인 상태입니다 · 기록은 안전하게 보관되며 연결 시 자동 저장됩니다</div>}
         <Routes>

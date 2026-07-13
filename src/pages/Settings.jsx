@@ -6,7 +6,7 @@ import Avatar from '../components/Avatar.jsx';
 import { toJpeg } from '../components/ItemsEditor.jsx';
 
 export default function Settings() {
-  const { session, profile, reloadProfile, theme, setTheme } = useApp();
+  const { session, profile, reloadProfile } = useApp();
   const uid = session.user.id;
   const [reminder, setReminder] = useState(profile?.reminder_time || '');
   const [blocks, setBlocks] = useState([]);
@@ -97,15 +97,6 @@ export default function Settings() {
           </div>
         </div>
         <input ref={avatarRef} type="file" accept="image/*" hidden onChange={pickAvatar} />
-      </section>
-
-      <section className="card fade-in">
-        <p className="section-title" style={{ margin: '0 0 10px' }}>화면 모드</p>
-        <div className="tabs" style={{ margin: 0 }}>
-          {[['light', '라이트'], ['dark', '다크'], ['system', '시스템 연동']].map(([v, l]) => (
-            <button key={v} className={theme === v ? 'on' : ''} onClick={() => setTheme(v)}>{l}</button>
-          ))}
-        </div>
       </section>
 
       <section className="card fade-in">
