@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <path d="M50 3 C 83 3, 97 17, 97 50 C 97 83, 83 97, 50 97 C 17 97, 3 83, 3 50 C 3 17, 17 3, 50 3 Z" fill="#2B52DF"/>
+  <text x="50" y="45.5" text-anchor="middle" font-family="'Helvetica Neue', Arial, sans-serif" font-weight="700" font-size="15.5" fill="#FFFFFF" textLength="60" lengthAdjust="spacingAndGlyphs">SHALOM</text>
+  <text x="50" y="63.5" text-anchor="middle" font-family="'Helvetica Neue', Arial, sans-serif" font-weight="700" font-size="15.5" fill="#FFFFFF" textLength="66" lengthAdjust="spacingAndGlyphs">INTOUCH</text>
+</svg>

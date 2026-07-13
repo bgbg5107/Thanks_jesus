@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment variables
+.env
+.env.local
+
+# Vite temp files
+vite.config.js.timestamp-*
+
+# OS files
+.DS_Store
