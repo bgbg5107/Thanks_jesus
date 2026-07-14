@@ -94,7 +94,9 @@ src/pages/                       # Login, Home(오늘), CalendarPage(달력·통
 - 알림 배지(unread)는 60초 폴링. 알림 읽음 처리 후 `loadUnread()` 호출 필요.
 
 ### 기록(Entry) 규칙
-- 하루 1건: DB `unique(user_id, date)` + 저장은 항상 `upsert(onConflict:'user_id,date')`.
+- 하루 여러 건 가능: DB에 `unique(user_id, date)` 제약 없음. 각 기록은 `id`(uuid)로 식별.
+  신규 기록은 `insert().select('id')`, 기존 기록은 `update().eq('id', id)`.
+  `upsert(onConflict: 'user_id,date')` 패턴은 폐기 — 사용 금지.
 - `contents`(jsonb)는 항목 배열 — 옛 형식(문자열)과 새 형식(`{text, photos}`)이 혼재.
   읽을 때는 util.js의 `itemText()/itemPhotos()`로 감싸서 접근할 것.
 - 감정은 `EMOTIONS` 12종의 name 문자열 그대로 저장. 목록 수정 시 util.js만 변경.
@@ -118,8 +120,10 @@ src/pages/                       # Login, Home(오늘), CalendarPage(달력·통
   사진 영역(`gc-photos`)은 `margin-top: auto`로 하단 배치.
 
 ### 오프라인 흐름
-저장 실패/오프라인 → `savePending()`(사진은 Blob으로 보관) → `online` 이벤트 또는 앱
-시작 시 `flushPending()` → 성공 시 `synced` CustomEvent 발행(Home이 수신해 재로드).
+저장 실패/오프라인 → `savePending()`(사진은 Blob으로 보관, `_tempId`로 키잉) → `online`
+이벤트 또는 앱 시작 시 `flushPending()` → 성공 시 `synced` CustomEvent 발행(Home이 수신해 재로드).
+pending은 `{ [tempId]: draft }` 구조로 저장 — 날짜가 아닌 `_tempId`가 키.
+`flushPending`은 `draft.id` 유무로 insert/update 분기.
 달력은 서버 데이터에 pending을 병합해 표시(`pending: true` 플래그).
 
 ### 권한은 RLS가 담당

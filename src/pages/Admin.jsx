@@ -70,9 +70,9 @@ export default function Admin() {
 
   /* 대시보드 추가 메트릭 */
   const loadDashMetrics = useCallback(async () => {
-    const { count: active } = await supabase.from('entries')
-      .select('id', { count: 'exact', head: true }).eq('date', todayIso);
-    setTodayActive(active || 0);
+    const { data: todayEntries } = await supabase.from('entries')
+      .select('user_id').eq('date', todayIso);
+    setTodayActive(new Set((todayEntries || []).map((e) => e.user_id)).size);
     const { count: cells } = await supabase.from('teams')
       .select('id', { count: 'exact', head: true }).eq('kind', 'cell');
     setCellCount(cells || 0);

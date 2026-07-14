@@ -89,15 +89,15 @@ input:focus-visible, textarea:focus-visible, select:focus-visible,
   }
 }
 
-.app { max-width: 560px; margin: 0 auto; padding: 0 20px 96px; min-height: 100%; }
+.app { max-width: 560px; margin: 0 auto; padding: env(safe-area-inset-top) 20px 116px; min-height: 100%; }
 
 /* 헤더 */
-.top { display: flex; align-items: baseline; justify-content: space-between; padding: 28px 2px 10px; }
+.top { display: flex; align-items: baseline; justify-content: space-between; padding: 40px 2px 14px; }
 .top h1 { font-size: var(--fs-xl); font-weight: 600; letter-spacing: -0.01em; color: var(--ink); margin: 0; }
 .top .date { font-size: var(--fs-sm); color: var(--gray); }
 
 /* 홈 인사 헤더 — "안녕, 이름" + 프로필 사진 */
-.hero { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 26px 2px 6px; }
+.hero { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 40px 2px 10px; }
 .hero h1 { margin: 0; font-size: var(--fs-xxl); font-weight: 600; letter-spacing: -0.02em; color: var(--ink); line-height: 1.25; }
 
 /* 헤더 아이콘 버튼 (알림 벨 등) */
@@ -441,7 +441,7 @@ textarea { resize: vertical; min-height: 88px; line-height: 1.8; }
 .emotions button.on { border-color: var(--ink); background: color-mix(in srgb, var(--ink) 8%, transparent); }
 
 /* 감사 항목 */
-.items .item { display: flex; gap: 6px; align-items: center; padding: 16px 0; border-bottom: 1px dashed var(--line); }
+.items .item { display: flex; gap: 6px; align-items: center; padding: 14px 0; border-bottom: 1px dashed var(--line); }
 .items .item:last-child { border-bottom: none; }
 .items .dot { color: var(--sage); }
 .items textarea { border: none; padding: 0; min-height: 32px; background: transparent; overflow: hidden; resize: none; }
@@ -507,12 +507,13 @@ textarea { resize: vertical; min-height: 88px; line-height: 1.8; }
 }
 .nav a .i { display: block; margin-bottom: 2px; }
 .nav a .i svg { display: block; margin: 0 auto; }
-/* 탭마다 고유 컬러 (라벨은 회색→활성 시 잉크색) */
-.nav a:nth-child(1) .i { color: var(--vis-cell); }   /* 오늘 — 그린 */
-.nav a:nth-child(2) .i { color: hsl(76, 70%, 45%); }  /* 캘린더 — 진한 라임 */
-.nav a:nth-child(3) .i { color: var(--brand); }      /* 나눔 — 블루 */
-.nav a:nth-child(4) .i { color: var(--like); }       /* 공동체 — 핑크레드 */
-.nav a:nth-child(5) .i { color: var(--vis-group); }  /* 설정 — 바이올렛 */
+/* 탭마다 고유 컬러 — 따뜻하고 채도 높은 톤 */  
+.nav a:nth-child(1) .i { color: #8cb620; }   /* 오늘 — 골든 옐로 color: #e8a030;*/
+
+.nav a:nth-child(2) .i { color: #e8a030; }   /* 캘린더 — 오렌지(#f06030) */
+.nav a:nth-child(3) .i { color: #e84868; }   /* 나눔 — 코랄 핑크 */
+.nav a:nth-child(4) .i { color: #9b5ed6; }   /* 공동체 — 밝은 바이올렛 */
+.nav a:nth-child(5) .i { color: #4a82c4; }   /* 설정 — 밝은 블루 */
 .nav a.on {
   color: var(--ink); font-weight: 700;
   background: var(--bg);
@@ -522,12 +523,19 @@ textarea { resize: vertical; min-height: 88px; line-height: 1.8; }
 .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; text-align: center; }
 .cal .wd { font-size: var(--fs-xs); color: var(--gray); padding: 4px 0; }
 .cal .day {
+  position: relative;
   aspect-ratio: 1; border-radius: 12px; border: 1px solid transparent;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   font-size: var(--fs-xs); color: var(--ink-soft); cursor: pointer; background: none;
   transition: background var(--t), border-color var(--t);
 }
 .cal .day .e { font-size: 1.05rem; line-height: 1.2; }
+.entry-count-badge {
+  position: absolute; top: -5px; left: -5px;
+  font-size: 10px; font-weight: 700; line-height: 1;
+  background: var(--pop); color: var(--accent-ink);
+  border-radius: 999px; padding: 2px 4px; min-width: 16px; text-align: center;
+}
 .cal .day.today { border-color: var(--sage); }
 .cal .day:hover { background: color-mix(in srgb, var(--sage) 18%, transparent); }
 .calhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
@@ -590,8 +598,8 @@ textarea { resize: vertical; min-height: 88px; line-height: 1.8; }
   border-bottom: 1px dashed var(--line);
 }
 .entry-items li:last-child { border-bottom: none; }
-.entry-items li::before { content: '·'; color: var(--sage); position: absolute; left: 2px; top: 8px; }
-.entry-foot { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.entry-items li::before { content: '·'; color: var(--sage); position: absolute; left: 2px; top: 10px; }
+.entry-foot { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
 .likebtn {
   border: none; background: none; cursor: pointer; color: var(--gray);
   font-size: var(--fs-sm); display: inline-flex; gap: 5px; align-items: center;
@@ -600,7 +608,7 @@ textarea { resize: vertical; min-height: 88px; line-height: 1.8; }
 }
 .likebtn.on { color: var(--like); }
 .likebtn:active { transform: scale(1.08); }
-.tiny { font-size: var(--fs-xs); color: var(--gray); }
+.tiny { font-size: var(--fs-xs); color: var(--gray); padding-top: 3px;}
 .pill { display: inline-block; font-size: var(--fs-xs); border: 1px solid var(--line); color: var(--ink-soft); border-radius: 999px; padding: 3px 10px; }
 .pill .del { border: none; background: none; cursor: pointer; color: inherit; padding: 6px; margin: -6px -4px -6px 0; }
 
@@ -748,9 +756,11 @@ textarea { resize: vertical; min-height: 88px; line-height: 1.8; }
 
 /* 좁은 모바일 화면 */
 @media (max-width: 420px) {
-  .app { padding: 0 12px 88px; }
-  .top { padding: 20px 2px 8px; }
-  .hero { padding: 20px 2px 4px; }
+  .app { padding: env(safe-area-inset-top) 12px 104px; }
+  .entry-scroll { margin: 0 -12px; padding: 0; }
+  .entry-page { padding: 0 12px; }
+  .top { padding: 32px 2px 10px; }
+  .hero { padding: 32px 2px 6px; }
   .hero h1 { font-size: var(--fs-xl); }
   .week-strip .wd .num { width: 36px; height: 36px; }
   .accent-card { padding: 20px 16px; }
@@ -1017,6 +1027,63 @@ textarea { resize: vertical; min-height: 88px; line-height: 1.8; }
 }
 .pwa-hint strong { font-weight: 700; }
 .pwa-hint-icon { display: none; }
+
+/* 다중 감사 기록 스와이프 */
+.entry-scroll {
+  display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  margin: 0 -20px; padding: 0;
+}
+.entry-scroll::-webkit-scrollbar { display: none; }
+.entry-page {
+  flex: 0 0 100vw; scroll-snap-align: start;
+  min-width: 0; padding: 0 20px;
+  box-sizing: border-box;
+}
+.entry-page-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 4px; margin-bottom: -4px;
+}
+.entry-page-num {
+  font-size: var(--fs-sm); font-weight: 700; color: var(--sub);
+}
+.entry-add-card {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 100%; min-height: 180px; border-radius: 18px;
+  border: 2px dashed var(--line); background: color-mix(in srgb, var(--card) 50%, transparent);
+  color: var(--ink-soft); cursor: pointer; font: inherit;
+  margin-top: 16px; transition: transform var(--t), border-color var(--t);
+}
+.entry-add-card:active { transform: scale(0.97); }
+.entry-add-card:hover { border-color: var(--gray); }
+.summary-scroll .entry-page { padding: 0 20px; }
+
+.entry-dots {
+  display: flex; justify-content: center; gap: 8px; padding: 10px 0 4px;
+}
+.entry-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ink); border: none; padding: 0; cursor: pointer; opacity: 0.3;
+  transition: background var(--t), transform var(--t);
+}
+.entry-dot.on { background: var(--brand); transform: scale(1.25); opacity: 1; }
+.entry-dot.add { width: 6px; height: 6px; background: var(--line); cursor: default; opacity: 0.5; }
+
+/* 캘린더 상세 모달 — 다중 기록 수평 스와이프 */
+.detail-entry-scroll {
+  display: flex; overflow-x: auto; scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  margin: 0 -26px; padding: 0;
+}
+.detail-entry-scroll::-webkit-scrollbar { display: none; }
+.detail-entry-page {
+  flex: 0 0 100%; scroll-snap-align: start;
+  min-width: 0; padding: 0 26px; box-sizing: border-box;
+}
+@media (max-width: 420px) {
+  .detail-entry-scroll { margin: 0 -18px; }
+  .detail-entry-page { padding: 0 18px; }
+}
 
 /* 인쇄(PDF 내보내기) */
 @media print {

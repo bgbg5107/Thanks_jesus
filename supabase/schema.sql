@@ -29,9 +29,10 @@ create table public.entries (
   shared_team_ids uuid[] not null default '{}',
   shared_user_ids uuid[] not null default '{}',
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  unique (user_id, date)                     -- 하루 1건
+  updated_at timestamptz not null default now()
+  -- 하루에 여러 기록 허용 (각 기록은 id로 식별, unique(user_id,date) 없음)
 );
+create index entries_user_date on public.entries (user_id, date);
 
 -- 오늘의 메모 — 하루 여러 장, 감사와 별개의 자유 기록 (본인만 접근)
 create table public.memos (
@@ -176,7 +177,7 @@ create or replace function public.team_week_activity(p_team_id uuid, p_from date
 returns table (user_id uuid, display_id text, dates date[])
 language sql security definer set search_path = public as $$
   select p.id, p.display_id,
-         coalesce(array_agg(e.date order by e.date) filter (where e.date is not null), '{}')
+         coalesce(array_agg(distinct e.date order by e.date) filter (where e.date is not null), '{}')
   from (
     select tm.user_id from public.team_members tm
     where tm.team_id = p_team_id and tm.status = 'accepted'
@@ -432,6 +433,63 @@ begin
   end if;
   delete from auth.users where id = p_user_id;  -- FK cascade
 end $$;
+
+-- ── 감사 공유 알림 트리거 ─────────────────────────────────────
+-- 기록이 팀/공동체에 처음 공유될 때 팀원들에게 알림을 발송한다.
+-- 같은 user_id + team_id + date 조합이면 하루에 한 번만 발송.
+
+create or replace function public.notify_entry_shared()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  v_team_id    uuid;
+  v_member_id  uuid;
+  v_display_id text;
+  v_new_teams  uuid[];
+begin
+  if NEW.visibility != 'team' or coalesce(array_length(NEW.shared_team_ids, 1), 0) = 0 then
+    return NEW;
+  end if;
+  if TG_OP = 'UPDATE' and OLD.visibility = 'team' then
+    select array_agg(t) into v_new_teams
+    from unnest(NEW.shared_team_ids) t
+    where not (t = any(coalesce(OLD.shared_team_ids, '{}'::uuid[])));
+  else
+    v_new_teams := NEW.shared_team_ids;
+  end if;
+  if coalesce(array_length(v_new_teams, 1), 0) = 0 then return NEW; end if;
+  select display_id into v_display_id from public.profiles where id = NEW.user_id;
+  foreach v_team_id in array v_new_teams loop
+    if exists (
+      select 1 from public.notifications
+      where type = 'entry_shared'
+        and (payload->>'sender_id')::uuid = NEW.user_id
+        and (payload->>'team_id')::uuid = v_team_id
+        and payload->>'date' = NEW.date::text
+    ) then continue; end if;
+    for v_member_id in
+      select tm.user_id from public.team_members tm
+      where tm.team_id = v_team_id and tm.status = 'accepted' and tm.user_id != NEW.user_id
+      union
+      select t.leader_id from public.teams t
+      where t.id = v_team_id and t.leader_id != NEW.user_id
+    loop
+      if public.is_blocked_between(NEW.user_id, v_member_id) then continue; end if;
+      insert into public.notifications (user_id, type, payload)
+      values (v_member_id, 'entry_shared', jsonb_build_object(
+        'sender_id',   NEW.user_id::text,
+        'sender_name', v_display_id,
+        'team_id',     v_team_id::text,
+        'date',        NEW.date::text,
+        'entry_id',    NEW.id::text
+      ));
+    end loop;
+  end loop;
+  return NEW;
+end $$;
+
+create trigger on_entry_shared
+  after insert or update on public.entries
+  for each row execute function public.notify_entry_shared();
 
 -- ── 관리자 지정 ──────────────────────────────────────────────
 -- 앱에서 관리자용 계정을 먼저 회원가입한 뒤, 아래를 이메일만 바꿔 실행하세요.

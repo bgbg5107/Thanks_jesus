@@ -9,12 +9,13 @@ const LABEL = {
   like: '좋아요',
   nudge: '셀의 마음',
   cell_week: '우리 셀 소식',
+  entry_shared: '감사 나눔',
   report: '신고 접수',
   admin: '관리자 알림',
 };
 
 export default function Notifications() {
-  const { session, profile, loadUnread } = useApp();
+  const { session, profile, loadUnread, loadTeams } = useApp();
   const uid = session.user.id;
   const [items, setItems] = useState(null);
   // 진입 시점의 미읽음 ID를 기억 — 읽음 처리 후에도 시각적으로 구분 유지
@@ -65,6 +66,7 @@ export default function Notifications() {
     }
     unreadIdsRef.current.delete(n.id);
     setItems(await load()); loadUnread();
+    if (accept) loadTeams();
   }
 
   function text(n) {
@@ -72,6 +74,7 @@ export default function Notifications() {
     if (n.type === 'invite_accepted') return `${n.payload.member} 님이 '${n.payload.team_name}'에 함께하게 되었습니다.`;
     if (n.type === 'nudge') return `${n.payload.from} 님이 당신의 감사 이야기를 조용히 기다리고 있어요. 🙏`;
     if (n.type === 'like') return `${n.payload.entry_date}의 감사에 누군가 마음을 전했습니다. ♥`;
+    if (n.type === 'entry_shared') return `${n.payload.sender_name}님이 오늘의 감사를 공유했습니다.`;
     if (n.type === 'report') return `신고가 접수되었습니다: ${n.payload.reason || ''}`;
     return n.payload?.message || '알림';
   }

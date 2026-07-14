@@ -5,7 +5,7 @@ import { photoUrl, supabase } from '../lib/supabase.js';
 import { EMOTIONS, randomVerse, todayStr, verseOfDay } from '../lib/util.js';
 import Emo from '../components/Emo.jsx';
 import Avatar from '../components/Avatar.jsx';
-import { filesToData, getPending, removePending, savePending, uploadPhotos } from '../lib/offline.js';
+import { filesToData, getPendingForDate, removePending, savePending, uploadPhotos } from '../lib/offline.js';
 import ItemsEditor, { emptyItem, snapItems, toEditItems, toJpeg } from '../components/ItemsEditor.jsx';
 import Lightbox from '../components/Lightbox.jsx';
 import Censer from '../components/Censer.jsx';
@@ -15,7 +15,29 @@ import Icon from '../components/Icon.jsx';
 import Overlay from '../components/Overlay.jsx';
 
 const WD_LABELS = ['월', '화', '수', '목', '금', '토', '일'];
-const gcLabel = (i) => `감사${i + 1}`;
+
+// 빈 기록 하나 생성
+function blankEntry() {
+  return {
+    _tempId: crypto.randomUUID(),
+    id: null,
+    items: [emptyItem()],
+    emotion: '',
+    photos: [],
+    visibility: 'private',
+    teamIds: [],
+    sharedUsers: [],
+    saved: false,         // 서버에 한 번이라도 저장된 적 있는지
+  };
+}
+
+// 기록 데이터에서 스냅샷 문자열 생성
+function makeSnap(e) {
+  return JSON.stringify({
+    items: snapItems(e.items), emotion: e.emotion, visibility: e.visibility,
+    teamIds: e.teamIds, su: (e.sharedUsers || []).map((u) => u.id), photos: e.photos,
+  });
+}
 
 export default function Home() {
   const { session, profile, online, teams, unread } = useApp();
@@ -24,25 +46,33 @@ export default function Home() {
   const navigate = useNavigate();
 
   const [verses, setVerses] = useState(() => JSON.parse(localStorage.getItem('verses') || '[]'));
-  const [items, setItems] = useState([emptyItem()]);
-  const [emotion, setEmotion] = useState('');
-  const [photos, setPhotos] = useState([]);       // 옛 형식: 하루 단위로 붙었던 사진
-  const [visibility, setVisibility] = useState('private');
-  const [teamIds, setTeamIds] = useState([]);   // 나눌 셀 여러 개 선택 가능
-  const [sharedUsers, setSharedUsers] = useState([]); // {id, display_id}
-  const [userQuery, setUserQuery] = useState('');
-  const [userResults, setUserResults] = useState([]);
+  // 다중 기록 상태
+  const [entries, setEntries] = useState([]);      // 오늘의 기록 배열
+  const [activeIdx, setActiveIdx] = useState(0);    // 현재 활성(편집 중) 기록 인덱스
   const [popupVerse, setPopupVerse] = useState(null);
-  const [zoom, setZoom] = useState(null);   // 확대 보기 사진 URL
-  const [emoOpen, setEmoOpen] = useState(false);
+  const [zoom, setZoom] = useState(null);
   const [saving, setSaving] = useState(false);
   const [savedNote, setSavedNote] = useState('');
   const [savedNoteFading, setSavedNoteFading] = useState(false);
-  const [saved, setSaved] = useState(false);   // 오늘 기록이 한 번이라도 담긴 뒤에는 자동 저장
-  const [composing, setComposing] = useState(false); // '기록하기'를 눌러 편집 화면을 연 상태
-  const [weekDone, setWeekDone] = useState(new Set()); // 이번 주 기록된 날짜들
-  const focusRef = useRef(null);                // 감사 기록 섹션 (스크롤 타겟)
-  const lastSaved = useRef('');                 // 마지막으로 저장된 내용 스냅샷
+  const [composing, setComposing] = useState(false);
+  const [weekDone, setWeekDone] = useState(new Set());
+  const [userQuery, setUserQuery] = useState('');
+  const [userResults, setUserResults] = useState([]);
+  const [emoOpen, setEmoOpen] = useState(false);
+  const focusRef = useRef(null);
+  const scrollRef = useRef(null);
+  const lastSaved = useRef(new Map());   // tempId → 스냅샷 문자열
+
+  // 활성 기록에 대한 편의 접근자
+  const active = entries[activeIdx] || null;
+
+  // entries 배열의 특정 인덱스 업데이트 헬퍼
+  const updateEntry = useCallback((idx, patch) => {
+    setEntries((prev) => prev.map((e, i) => i === idx ? { ...e, ...patch } : e));
+  }, []);
+  const updateActive = useCallback((patch) => {
+    setEntries((prev) => prev.map((e, i) => i === activeIdx ? { ...e, ...patch } : e));
+  }, [activeIdx]);
 
   // 이번 주(월~일) 날짜들
   const week = (() => {
@@ -56,12 +86,6 @@ export default function Home() {
     });
   })();
 
-  const makeSnap = (v) => JSON.stringify(v);
-  const snapshot = () => makeSnap({
-    items: snapItems(items), emotion, visibility, teamIds,
-    su: sharedUsers.map((u) => u.id), photos,
-  });
-
   // 말씀 로드 (오프라인 대비 로컬 캐시)
   useEffect(() => {
     if (!online) return;
@@ -73,41 +97,71 @@ export default function Home() {
     });
   }, [online]);
 
-  // 오늘 기록 로드 (서버 → 로컬 대기분 우선)
+  // 오늘 기록 로드 (서버 → 로컬 대기분 병합)
   const load = useCallback(async () => {
-    let entry = null;
+    let serverEntries = [];
     if (online) {
       const { data } = await supabase.from('entries').select('*')
-        .eq('user_id', uid).eq('date', date).maybeSingle();
-      entry = data;
+        .eq('user_id', uid).eq('date', date).order('created_at');
+      serverEntries = data || [];
     }
-    const pending = (await getPending())[date];
-    const src = pending || entry;
-    if (src) {
+    const pendingEntries = await getPendingForDate(date);
+
+    // 서버 기록을 편집용으로 변환
+    const loaded = [];
+    for (const src of serverEntries) {
       const its = toEditItems(src.contents);
       let su = [];
-      if (!pending && entry?.shared_user_ids?.length) {
-        const { data: us } = await supabase.from('profiles').select('id, display_id').in('id', entry.shared_user_ids);
+      if (src.shared_user_ids?.length) {
+        const { data: us } = await supabase.from('profiles').select('id, display_id').in('id', src.shared_user_ids);
         su = us || [];
       }
-      // DB의 'team' 공유를 화면 카테고리(셀/나눔 공동체)로 분류
       let uiVis = src.visibility || 'private';
       if (uiVis === 'team') {
         const hasCell = (src.shared_team_ids || []).some((id) => teams.find((t) => t.id === id)?.kind === 'cell');
         uiVis = hasCell ? 'cell' : 'group';
       }
-      setItems(its);
-      setEmotion(src.emotion || '');
-      setPhotos(src.photos || []);
-      setVisibility(uiVis);
-      setTeamIds(src.shared_team_ids || []);
-      setSharedUsers(su);
-      setSaved(true);
-      setComposing(true);
-      lastSaved.current = makeSnap({
-        items: snapItems(its), emotion: src.emotion || '', visibility: uiVis,
-        teamIds: src.shared_team_ids || [], su: su.map((u) => u.id), photos: src.photos || [],
+      loaded.push({
+        _tempId: src.id,  // 서버 기록은 id를 tempId로도 사용
+        id: src.id,
+        items: its,
+        emotion: src.emotion || '',
+        photos: src.photos || [],
+        visibility: uiVis,
+        teamIds: src.shared_team_ids || [],
+        sharedUsers: su,
+        saved: true,
       });
+    }
+
+    // pending 기록 병합 (서버에 없는 것만 추가)
+    for (const p of pendingEntries) {
+      const exists = loaded.find((e) => e.id && e.id === p.id);
+      if (!exists) {
+        loaded.push({
+          _tempId: p._tempId,
+          id: p.id || null,
+          items: toEditItems(p.contents),
+          emotion: p.emotion || '',
+          photos: p.photos || [],
+          visibility: p.visibility || 'private',
+          teamIds: p.shared_team_ids || [],
+          sharedUsers: [],
+          saved: !!p.id,
+        });
+      }
+    }
+
+    if (loaded.length) {
+      setEntries(loaded);
+      setComposing(true);
+      // 스냅샷 초기화
+      const snaps = new Map();
+      loaded.forEach((e) => snaps.set(e._tempId, makeSnap(e)));
+      lastSaved.current = snaps;
+    } else {
+      setEntries([]);
+      setComposing(false);
     }
   }, [uid, date, online, teams]);
 
@@ -129,10 +183,13 @@ export default function Home() {
           .eq('user_id', uid).gte('date', from).lte('date', to);
         (data || []).forEach((r) => done.add(r.date));
       }
-      Object.keys(await getPending()).forEach((d) => { if (d >= from && d <= to) done.add(d); });
+      const allPending = await getPendingForDate(date);
+      allPending.forEach((d) => { if (d.date >= from && d.date <= to) done.add(d.date); });
+      // 현재 편집 중인 기록 중 저장된 것도 반영
+      entries.forEach((e) => { if (e.saved) done.add(date); });
       setWeekDone(done);
     })();
-  }, [online, uid, saved]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [online, uid, entries.length]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // 이름으로 공유 대상 검색
   useEffect(() => {
@@ -145,69 +202,75 @@ export default function Home() {
     return () => clearTimeout(t);
   }, [userQuery, uid, online]);
 
-  async function doSave(silent) {
-    const cleaned = items.filter((x) => x.text.trim() || x.photos.length || x.newFiles.length);
+  // 특정 기록을 저장
+  async function doSave(idx, silent) {
+    const entry = entries[idx];
+    if (!entry) return false;
+    const cleaned = entry.items.filter((x) => x.text.trim() || x.photos.length || x.newFiles.length);
     if (!cleaned.length) { if (!silent) appAlert('감사한 일을 한 가지라도 적어 주세요.'); return false; }
-    if (!emotion) { if (!silent) { setEmoOpen(true); appAlert('오늘의 마음을 하나 골라 주세요.'); } return false; }
-    // 셀/나눔 공동체 공유는 DB에서는 동일한 'team' 공유 — 종류에 맞는 선택만 저장
-    const isTeamMode = visibility === 'cell' || visibility === 'group';
+    if (!entry.emotion) { if (!silent) { setEmoOpen(true); appAlert('오늘의 마음을 하나 골라 주세요.'); } return false; }
+    const isTeamMode = entry.visibility === 'cell' || entry.visibility === 'group';
     const kindIds = isTeamMode
-      ? teamIds.filter((id) => teams.find((t) => t.id === id)?.kind === visibility)
+      ? entry.teamIds.filter((id) => teams.find((t) => t.id === id)?.kind === entry.visibility)
       : [];
     if (isTeamMode && !kindIds.length) {
-      if (!silent) appAlert(visibility === 'cell' ? '셀을 하나 이상 골라 주세요.' : '나눔 공동체를 하나 이상 골라 주세요.');
+      if (!silent) appAlert(entry.visibility === 'cell' ? '셀을 하나 이상 골라 주세요.' : '나눔 공동체를 하나 이상 골라 주세요.');
       return false;
     }
     setSaving(true);
     const base = {
-      date, emotion, photos,
-      visibility: isTeamMode ? 'team' : visibility,
+      date, emotion: entry.emotion, photos: entry.photos,
+      visibility: isTeamMode ? 'team' : entry.visibility,
       shared_team_ids: kindIds,
-      shared_user_ids: visibility === 'users' ? sharedUsers.map((u) => u.id) : [],
+      shared_user_ids: entry.visibility === 'users' ? entry.sharedUsers.map((u) => u.id) : [],
     };
     try {
       if (!navigator.onLine) throw new Error('offline');
-      // 항목별 새 사진 업로드 후 각 항목에 붙인다
       const newItems = [];
       for (const x of cleaned) {
         const paths = x.newFiles.length ? await uploadPhotos(uid, await filesToData(x.newFiles)) : [];
         newItems.push({ text: x.text.trim(), photos: [...x.photos, ...paths], newFiles: [] });
       }
       const contents = newItems.map((x) => ({ text: x.text, photos: x.photos }));
-      const { error } = await supabase.from('entries').upsert({
+      const row = {
         user_id: uid, ...base, contents,
         updated_at: new Date().toISOString(),
-      }, { onConflict: 'user_id,date' });
-      if (error) throw error;
-      await removePending(date);
-      setItems(newItems);
+      };
+      let resultId = entry.id;
+      if (entry.id) {
+        // 기존 기록 수정
+        const { error } = await supabase.from('entries').update(row).eq('id', entry.id);
+        if (error) throw error;
+      } else {
+        // 신규 기록 삽입
+        const { data: inserted, error } = await supabase.from('entries').insert(row).select('id').single();
+        if (error) throw error;
+        resultId = inserted.id;
+      }
+      await removePending(entry._tempId);
+      updateEntry(idx, { items: newItems, saved: true, id: resultId, _tempId: resultId });
       setSavedNote(silent ? '자동으로 저장되었습니다.' : '오늘의 감사가 담겼습니다.');
-      lastSaved.current = makeSnap({
-        items: snapItems(newItems), emotion, visibility, teamIds,
-        su: sharedUsers.map((u) => u.id), photos,
-      });
+      lastSaved.current.set(resultId, makeSnap({ ...entry, items: newItems }));
     } catch {
-      // 오프라인 — 항목별 사진은 blob으로 보관했다가 연결되면 항목에 붙인다
       const contents = cleaned.map((x) => ({ text: x.text.trim(), photos: x.photos }));
       const itemPhotosData = [];
       for (let i = 0; i < cleaned.length; i++) {
         for (const d of await filesToData(cleaned[i].newFiles)) itemPhotosData.push({ i, ...d });
       }
-      await savePending({ ...base, contents, itemPhotosData });
+      await savePending({ _tempId: entry._tempId, id: entry.id, ...base, contents, itemPhotosData });
       setSavedNote('연결이 닿는 대로 자동으로 저장해 드릴게요.');
-      lastSaved.current = snapshot();
+      updateEntry(idx, { saved: true });
+      lastSaved.current.set(entry._tempId, makeSnap(entry));
     }
-    setSaved(true);
     setSaving(false);
     return true;
   }
 
   async function save() {
-    const first = !saved;   // 오늘의 첫 담기인지
-    const ok = await doSave(false);
+    const first = entries.length === 0 || (entries.length === 1 && !entries[0].saved);
+    const ok = await doSave(activeIdx, false);
     if (ok) { setComposing(false); }
     if (ok && first) {
-      // 금향로에 쌓일 전체 누적 기록 수 (오프라인이면 개수 없이 연출만)
       let total = null;
       try {
         if (navigator.onLine) {
@@ -217,99 +280,172 @@ export default function Home() {
         }
       } catch { /* 조용히 넘어간다 */ }
       const v = randomVerse(verses);
-      setPopupVerse({ ...(v || {}), total });   // 말씀 팝업은 첫 담기 때만
+      setPopupVerse({ ...(v || {}), total });
     }
   }
 
-  // 감사를 모두 지우면 오늘의 기록도 조용히 비워진다 (자동 저장과 같은 호흡)
-  const isEmpty = items.every((x) => !x.text.trim() && !x.photos.length && !x.newFiles.length) && !photos.length;
+  // 특정 기록이 비었는지 확인
+  function isEntryEmpty(entry) {
+    return entry.items.every((x) => !x.text.trim() && !x.photos.length && !x.newFiles.length) && !entry.photos.length;
+  }
 
-  async function removeToday() {
-    if (!navigator.onLine) return;   // 연결이 닿으면 다음 호흡에 비워진다
-    setSaving(true);
-    try {
-      const { error } = await supabase.from('entries').delete().eq('user_id', uid).eq('date', date);
-      if (error) throw error;
-      await removePending(date);
-      setSaved(false);
-      lastSaved.current = '';
+  // 특정 기록 삭제
+  async function removeEntry(idx) {
+    const entry = entries[idx];
+    if (!entry) return;
+    if (entry.id && navigator.onLine) {
+      try {
+        const { error } = await supabase.from('entries').delete().eq('id', entry.id);
+        if (error) throw error;
+      } catch { return; }
+    }
+    await removePending(entry._tempId);
+    lastSaved.current.delete(entry._tempId);
+    const next = entries.filter((_, i) => i !== idx);
+    setEntries(next);
+    if (next.length === 0) {
+      setComposing(false);
       setSavedNoteFading(false);
       setSavedNote('오늘의 기록을 비웠습니다.\n마음이 닿는 순간, 언제든 다시 담아 주세요.');
       setTimeout(() => setSavedNoteFading(true), 2400);
       setTimeout(() => { setSavedNote(''); setSavedNoteFading(false); }, 3000);
-    } catch { /* 다음 자동 저장 때 다시 시도한다 */ } finally {
-      setSaving(false);
+    } else {
+      setActiveIdx(Math.min(idx, next.length - 1));
     }
   }
 
-  // 한 번 담긴 뒤에는 손을 멈추면 3초 후 자동으로 저장 — 모두 지웠다면 조용히 비운다
-  // 단, 카드 편집 팝업이 열려 있는 동안은 보류 — 저장이 빈 항목을 걷어내며
-  // 편집 중인 카드가 사라질 수 있으므로, 팝업을 닫은 뒤에 저장한다.
+  // 자동 저장 (3초 후)
   useEffect(() => {
-    if (!saved || saving) return;
-    if (snapshot() === lastSaved.current) return;
-    const t = setTimeout(() => (isEmpty ? removeToday() : doSave(true)), 3000);
+    if (!active || !active.saved || saving) return;
+    const snap = makeSnap(active);
+    if (snap === (lastSaved.current.get(active._tempId) || '')) return;
+    const t = setTimeout(() => {
+      if (isEntryEmpty(active)) removeEntry(activeIdx);
+      else doSave(activeIdx, true);
+    }, 3000);
     return () => clearTimeout(t);
-  });
+  }); // 매 렌더마다
 
-  // 첫 담기 전 초안(draft)을 localStorage에 보관 — 페이지 이동 후 복원
+  // 초안(draft) 관리 — 첫 담기 전
   const DRAFT_KEY = `draft-${uid}-${date}`;
   const saveDraft = useCallback(() => {
-    if (!composing) { return; }
-    localStorage.setItem(DRAFT_KEY, JSON.stringify({
-      items: items.map((x) => ({ text: x.text, photos: x.photos })),
-      emotion, visibility, teamIds,
-      sharedUsers: sharedUsers.map((u) => ({ id: u.id, display_id: u.display_id })),
-      composing: true,
-    }));
-  }, [items, emotion, visibility, teamIds, sharedUsers, composing, DRAFT_KEY]);
+    if (!composing || entries.length === 0) return;
+    // 저장되지 않은 기록만 초안으로 보관
+    const unsaved = entries.filter((e) => !e.saved);
+    if (unsaved.length === 0) { localStorage.removeItem(DRAFT_KEY); return; }
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(
+      unsaved.map((e) => ({
+        _tempId: e._tempId,
+        items: e.items.map((x) => ({ text: x.text, photos: x.photos })),
+        emotion: e.emotion, visibility: e.visibility, teamIds: e.teamIds,
+        sharedUsers: e.sharedUsers.map((u) => ({ id: u.id, display_id: u.display_id })),
+      }))
+    ));
+  }, [entries, composing, DRAFT_KEY]);
 
-  // saved가 되면 초안 삭제 (서버/오프라인에 저장됐으므로)
-  useEffect(() => { if (saved) localStorage.removeItem(DRAFT_KEY); }, [saved, DRAFT_KEY]);
+  // 모든 기록이 저장되면 초안 삭제
+  useEffect(() => {
+    if (entries.length > 0 && entries.every((e) => e.saved)) localStorage.removeItem(DRAFT_KEY);
+  }, [entries, DRAFT_KEY]);
 
   // 초안 복원 — 서버 기록이 없을 때만
   const draftLoaded = useRef(false);
   useEffect(() => {
-    if (draftLoaded.current || saved) return;
+    if (draftLoaded.current || entries.some((e) => e.saved)) return;
     draftLoaded.current = true;
     const raw = localStorage.getItem(DRAFT_KEY);
     if (!raw) return;
     try {
-      const d = JSON.parse(raw);
-      if (d.items) setItems(toEditItems(d.items));
-      if (d.emotion) setEmotion(d.emotion);
-      if (d.visibility) setVisibility(d.visibility);
-      if (d.teamIds) setTeamIds(d.teamIds);
-      if (d.sharedUsers) setSharedUsers(d.sharedUsers);
-      if (d.composing) setComposing(true);
+      const drafts = JSON.parse(raw);
+      if (!Array.isArray(drafts) || !drafts.length) return;
+      const restored = drafts.map((d) => ({
+        _tempId: d._tempId || crypto.randomUUID(),
+        id: null,
+        items: toEditItems(d.items),
+        emotion: d.emotion || '',
+        photos: [],
+        visibility: d.visibility || 'private',
+        teamIds: d.teamIds || [],
+        sharedUsers: d.sharedUsers || [],
+        saved: false,
+      }));
+      setEntries(restored);
+      setComposing(true);
     } catch { localStorage.removeItem(DRAFT_KEY); }
   }, [DRAFT_KEY]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 첫 담기 전 편집 중이면 변경마다 초안 저장
+  // 편집 중이면 변경마다 초안 저장
   useEffect(() => {
-    if (saved) return;
+    if (entries.every((e) => e.saved)) return;
     const t = setTimeout(saveDraft, 500);
     return () => clearTimeout(t);
-  }); // 매 렌더마다 확인
+  }); // 매 렌더마다
 
   // 언마운트 시 초안 저장
   const saveDraftRef = useRef(saveDraft);
   saveDraftRef.current = saveDraft;
   useEffect(() => {
-    if (saved) return;
+    if (entries.every((e) => e.saved)) return;
     return () => saveDraftRef.current();
-  }, [saved]);
+  }, [entries.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const daily = verseOfDay(verses);
 
   // 기록 화면 접기 — 남은 변경분은 조용히 저장하고 닫는다
   async function collapse() {
-    if (saved && snapshot() !== lastSaved.current) {
-      if (isEmpty) await removeToday();
-      else await doSave(true);
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i];
+      if (e.saved) {
+        const snap = makeSnap(e);
+        if (snap !== (lastSaved.current.get(e._tempId) || '')) {
+          if (isEntryEmpty(e)) await removeEntry(i);
+          else await doSave(i, true);
+        }
+      }
     }
     setComposing(false);
   }
+
+  // 새 기록 추가
+  function addEntry() {
+    const ne = blankEntry();
+    const newIdx = entries.length; // 새 카드의 인덱스
+    setEntries((prev) => [...prev, ne]);
+    setActiveIdx(newIdx);
+    // 새로 추가된 카드로 이동 (scroll-snap이 정확한 위치로 보정)
+    setTimeout(() => {
+      if (scrollRef.current) {
+        const el = scrollRef.current;
+        el.scrollTo({ left: newIdx * el.offsetWidth, behavior: 'smooth' });
+      }
+    }, 80);
+  }
+
+  // 스크롤 snap 변경 시 활성 인덱스 업데이트
+  function onScroll() {
+    const el = scrollRef.current;
+    if (!el) return;
+    const cardWidth = el.offsetWidth;
+    const idx = Math.round(el.scrollLeft / cardWidth);
+    if (idx !== activeIdx && idx < entries.length) {
+      setActiveIdx(idx);
+      setEmoOpen(false);
+      setUserQuery('');
+      setUserResults([]);
+    }
+  }
+
+  // 특정 인덱스로 스크롤
+  function scrollToIdx(idx) {
+    setActiveIdx(idx);
+    setTimeout(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTo({ left: idx * scrollRef.current.offsetWidth, behavior: 'smooth' });
+      }
+    }, 30);
+  }
+
+  const hasSaved = entries.some((e) => e.saved);
 
   return (
     <>
@@ -356,158 +492,269 @@ export default function Home() {
       {!composing && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 24 }}>
           <p className="home-title" style={{ margin: '0 4px 0' }}>🧡 오늘의 감사</p>
-          {saved && (
-            <button className="likebtn" onClick={() => setComposing(true)}>펼치기 <Icon name="chevronDown" size={14} /></button>
+          {hasSaved && (
+            <button className="likebtn" onClick={() => { setComposing(true); setActiveIdx(0); }}>펼치기 <Icon name="chevronDown" size={14} /></button>
           )}
         </div>
       )}
 
       {/* 기록 없는 초기 상태 */}
-      {!composing && !saved && (
+      {!composing && !hasSaved && (
         <section className="accent-card lav fade-in" style={{ textAlign: 'center', padding: 20 }}>
           <div style={{ textAlign: 'center', padding: '6px 0' }}>
             <p style={{ margin: '0 0 14px', color: 'color-mix(in srgb, var(--accent-ink) 70%, transparent)' }}>
               오늘, 어떤 순간이 감사했나요?<br/> 작은 것도 괜찮아요 ☺️
             </p>
             <button className="btn small soft" onClick={() => {
-            setComposing(true);
-            setTimeout(() => focusRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+              if (entries.length === 0) setEntries([blankEntry()]);
+              setActiveIdx(0);
+              setComposing(true);
+              setTimeout(() => focusRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
             }}>기록하기</button>
           </div>
         </section>
       )}
 
-      {/* 저장된 기록이 있으면 — 읽기전용 불릿 리스트 */}
-      {!composing && saved && (
-        <div className="items fade-in" style={{ cursor: 'pointer', background: 'color-mix(in srgb, var(--card) 70%, transparent)', borderRadius: 14, padding: '4px 12px', marginTop: 10 }} onClick={() => setComposing(true)}>
-          {items.filter((v) => v.text || v.photos.length > 0).map((v, i) => (
-            <div key={i} className="item" style={{ pointerEvents: 'none' }}>
-              <span className="dot">·</span>
-              <span style={{ flex: 1, wordBreak: 'break-word' }}>{v.text}</span>
-              {v.photos.length > 0 && (
-                <span className="gc-photos" style={{ marginLeft: 8 }}>
-                  {v.photos.slice(0, 2).map((p) => (
-                    <img key={p} src={photoUrl(p)} alt="" />
+      {/* 저장된 기록이 있으면 — 읽기전용 스와이프 요약 */}
+      {!composing && hasSaved && (() => {
+        const savedEntries = entries.filter((e) => e.saved);
+        return (
+          <div className="fade-in" style={{ marginTop: 10 }}>
+            {savedEntries.length === 1 ? (
+              /* 기록 1개 — 바로 표시 */
+              <div style={{ cursor: 'pointer' }} onClick={() => { setComposing(true); setActiveIdx(0); }}>
+                <div className="items" style={{
+                  background: 'color-mix(in srgb, var(--card) 70%, transparent)',
+                  borderRadius: 14, padding: '4px 12px',
+                }}>
+                  {savedEntries[0].items.filter((v) => v.text || v.photos.length > 0).map((v, i) => (
+                    <div key={i} className="item" style={{ pointerEvents: 'none' }}>
+                      <span className="dot">·</span>
+                      <span style={{ flex: 1, wordBreak: 'break-word' }}>{v.text}</span>
+                      {v.photos.length > 0 && (
+                        <span className="gc-photos" style={{ marginLeft: 8 }}>
+                          {v.photos.slice(0, 2).map((p) => (
+                            <img key={p} src={photoUrl(p)} alt="" />
+                          ))}
+                        </span>
+                      )}
+                    </div>
                   ))}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+                </div>
+              </div>
+            ) : (
+              /* 기록 2개 이상 — 좌우 스와이프 */
+              <>
+                <div className="entry-scroll summary-scroll" ref={scrollRef} onScroll={onScroll}>
+                  {savedEntries.map((entry, ei) => (
+                    <div key={entry._tempId} className="entry-page" onClick={() => {
+                      setActiveIdx(entries.indexOf(entry));
+                      setComposing(true);
+                    }} style={{ cursor: 'pointer' }}>
+                      <div className="items" style={{
+                        background: 'color-mix(in srgb, var(--card) 70%, transparent)',
+                        borderRadius: 14, padding: '4px 12px',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 0 4px' }}>
+                          {entry.emotion && <Emo name={entry.emotion} size="1.2rem" />}
+                          <span className="tiny" style={{ color: 'var(--sub)' }}>감사 {ei + 1}</span>
+                        </div>
+                        {entry.items.filter((v) => v.text || v.photos.length > 0).map((v, i) => (
+                          <div key={i} className="item" style={{ pointerEvents: 'none' }}>
+                            <span className="dot">·</span>
+                            <span style={{ flex: 1, wordBreak: 'break-word' }}>{v.text}</span>
+                            {v.photos.length > 0 && (
+                              <span className="gc-photos" style={{ marginLeft: 8 }}>
+                                {v.photos.slice(0, 2).map((p) => (
+                                  <img key={p} src={photoUrl(p)} alt="" />
+                                ))}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="entry-dots">
+                  {savedEntries.map((e, i) => (
+                    <button key={e._tempId} className={`entry-dot${i === activeIdx ? ' on' : ''}`}
+                      aria-label={`감사 ${i + 1}`} onClick={() => scrollToIdx(i)} />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
 
-      {/* 편집 상태 — 카드 스크롤 + 감정/공유/저장 */}
+      {/* 편집 상태 — 카드 스와이프 + 감정/공유/저장 */}
       {composing && (
       <section className="fade-in" ref={focusRef}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 24 }}>
           <p className="home-title" style={{ margin: '0 4px 0' }}>🧡 오늘의 감사</p>
           <button className="likebtn" onClick={collapse}>접기 <Icon name="chevronUp" size={14} /></button>
         </div>
-        <div className="sub" style={{ padding: '16px 12px', background: 'var(--card)' }}>
-          <ItemsEditor
-            items={items}
-            placeholder="오늘, 어떤 순간이 감사했나요?"
-            onZoom={setZoom}
-            onChange={setItems}
-          />
 
-          {photos.length > 0 && (
-            <div className="photos" style={{ marginTop: 4 }}>
-              {photos.map((p) => (
-                <div className="ph" key={p}>
-                  <img src={photoUrl(p)} alt="" onClick={() => setZoom(photoUrl(p))} />
-                  <button aria-label="사진 지우기" onClick={() => setPhotos((a) => a.filter((x) => x !== p))}><Icon name="x" size={12} /></button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="sub pop-t">
-          <button type="button" className="emo-head" aria-expanded={emoOpen} onClick={() => setEmoOpen((o) => !o)}>
-            <span className="sub-title" style={{ margin: 0 }}>💛 오늘의 마음</span>
-            <span className="emo-sel">
-              {emotion ? <><Emo name={emotion} /> {emotion}</> : '마음 고르기'} <Icon name={emoOpen ? 'chevronUp' : 'chevronDown'} size={14} />
-            </span>
-          </button>
-          {emoOpen && (
-            <div className="emotions" style={{ marginTop: 14 }}>
-              {EMOTIONS.map((e) => (
-                <button key={e.name} className={emotion === e.name ? 'on' : ''}
-                  onClick={() => { setEmotion(e.name); setEmoOpen(false); }}>
-                  <span className="e"><Emo name={e.name} size="2.4rem" /></span>
-                  <span className="n">{e.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="sub sky-t">
-        <p className="sub-title">🕊️ 함께 나누기</p>
-        <div className="tabs vis" style={{ margin: 0, flexWrap: 'wrap' }}>
-          {[['private', '나만 보기'], ['cell', '셀원들과 공유'], ['group', '나눔 공동체와 공유'], ['users', '개인 공유']].map(([v, l]) => (
-            <button key={v} type="button" className={visibility === v ? 'on' : ''}
-              style={{ flex: '1 1 45%' }}
-              onClick={() => setVisibility(v)}>{l}</button>
-          ))}
-        </div>
-        {(visibility === 'cell' || visibility === 'group') && (
-          <div className="field" style={{ textAlign: 'center', margin: 0, padding: '10px 0' }}>
-            <p className="tiny" style={{ margin: '10px 0 8px' }}>{visibility === 'cell' ? '현재 본인의 셀을 선택하세요.' : '나눔 공동체를 선택하세요.'}</p>
-            <div>
-              {teams.filter((t) => t.kind === visibility).map((t) => {
-                const on = teamIds.includes(t.id);
-                return (
-                  <button key={t.id} type="button"
-                    className={`team-chip ${on ? 'on' : ''}`}
-                    onClick={() => setTeamIds((a) => (on ? a.filter((x) => x !== t.id) : [...a, t.id]))}>
-                    {on ? '✓ ' : ''}{t.name}
-                  </button>
-                );
-              })}
-            </div>
-            {!teams.some((t) => t.kind === visibility) && (
-              <p className="tiny" style={{ margin: '8px 0 0' }}>
-                {visibility === 'cell'
-                  ? '아직 속한 셀이 없습니다. 셀리더의 초대를 받아보세요.'
-                  : '아직 속한 나눔 공동체가 없습니다.'}
-              </p>
-            )}
-          </div>
-        )}
-        {visibility === 'users' && (
-          <div className="field" style={{ marginBottom: 0 }}>
-            <input type="text" className="share-user-search" placeholder="이름으로 검색 (예: 인터치A)" aria-label="공유할 사람 이름 검색" value={userQuery} onChange={(e) => setUserQuery(e.target.value)} />
-            {userResults.map((u) => (
-              <button key={u.id} className="btn subtle small" style={{ margin: '6px 6px 0 0' }}
-                onClick={() => {
-                  if (!sharedUsers.find((x) => x.id === u.id)) setSharedUsers((a) => [...a, u]);
-                  setUserQuery('');
-                }}>
-                + {u.display_id}
-              </button>
+        {/* 페이지 인디케이터 (상단) */}
+        {entries.length > 1 && (
+          <div className="entry-dots">
+            {entries.map((e, i) => (
+              <button key={e._tempId} className={`entry-dot${i === activeIdx ? ' on' : ''}`}
+                aria-label={`감사 ${i + 1}`} onClick={() => scrollToIdx(i)} />
             ))}
-            <div style={{ marginTop: 8 }}>
-              {sharedUsers.map((u) => (
-                <span key={u.id} className="pill" style={{ marginRight: 6 }}>
-                  {u.display_id}{' '}
-                  <button className="del" aria-label={`${u.display_id} 빼기`}
-                    onClick={() => setSharedUsers((a) => a.filter((x) => x.id !== u.id))}><Icon name="x" size={12} /></button>
-                </span>
-              ))}
-            </div>
+            <span className="entry-dot add" aria-hidden="true" />
           </div>
         )}
+
+        {/* 다중 기록 스와이프 영역 */}
+        <div className="entry-scroll" ref={scrollRef} onScroll={onScroll}>
+          {entries.map((entry, ei) => (
+            <div key={entry._tempId} className="entry-page">
+
+              {entries.length > 1 && (
+                <div className="entry-page-header">
+                  <span className="entry-page-num">감사 {ei + 1}</span>
+                  <button className="likebtn" aria-label="이 기록 삭제"
+                    onClick={async () => {
+                      if (entry.saved) {
+                        const ok = await appConfirm('이 감사 기록을 지울까요?');
+                        if (!ok) return;
+                      }
+                      removeEntry(ei);
+                    }}>
+                    <Icon name="x" size={14} />
+                  </button>
+                </div>
+              )}
+
+              <div className="sub" style={{ padding: '12px 12px', background: 'var(--card)' }}>
+                <ItemsEditor
+                  items={entry.items}
+                  placeholder="오늘, 어떤 순간이 감사했나요?"
+                  onZoom={setZoom}
+                  onChange={(newItems) => updateEntry(ei, { items: newItems })}
+                />
+
+                {entry.photos.length > 0 && (
+                  <div className="photos" style={{ marginTop: 4 }}>
+                    {entry.photos.map((p) => (
+                      <div className="ph" key={p}>
+                        <img src={photoUrl(p)} alt="" onClick={() => setZoom(photoUrl(p))} />
+                        <button aria-label="사진 지우기" onClick={() => updateEntry(ei, {
+                          photos: entry.photos.filter((x) => x !== p),
+                        })}><Icon name="x" size={12} /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="sub pop-t">
+                <button type="button" className="emo-head" aria-expanded={ei === activeIdx && emoOpen} onClick={() => {
+                  if (ei !== activeIdx) scrollToIdx(ei);
+                  setEmoOpen((o) => ei === activeIdx ? !o : true);
+                }}>
+                  <span className="sub-title" style={{ margin: 0 }}>💛 오늘의 마음</span>
+                  <span className="emo-sel">
+                    {entry.emotion ? <><Emo name={entry.emotion} /> {entry.emotion}</> : '마음 고르기'} <Icon name={ei === activeIdx && emoOpen ? 'chevronUp' : 'chevronDown'} size={14} />
+                  </span>
+                </button>
+                {ei === activeIdx && emoOpen && (
+                  <div className="emotions" style={{ marginTop: 14 }}>
+                    {EMOTIONS.map((e) => (
+                      <button key={e.name} className={entry.emotion === e.name ? 'on' : ''}
+                        onClick={() => { updateEntry(ei, { emotion: e.name }); setEmoOpen(false); }}>
+                        <span className="e"><Emo name={e.name} size="2.4rem" /></span>
+                        <span className="n">{e.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="sub sky-t">
+              <p className="sub-title">🕊️ 함께 나누기</p>
+              <div className="tabs vis" style={{ margin: 0, flexWrap: 'wrap' }}>
+                {[['private', '나만 보기'], ['cell', '셀원들과 공유'], ['group', '나눔 공동체와 공유'], ['users', '개인 공유']].map(([v, l]) => (
+                  <button key={v} type="button" className={entry.visibility === v ? 'on' : ''}
+                    style={{ flex: '1 1 45%' }}
+                    onClick={() => updateEntry(ei, { visibility: v })}>{l}</button>
+                ))}
+              </div>
+              {(entry.visibility === 'cell' || entry.visibility === 'group') && (
+                <div className="field" style={{ textAlign: 'center', margin: 0, padding: '10px 0' }}>
+                  <p className="tiny" style={{ margin: '10px 0 8px' }}>{entry.visibility === 'cell' ? '현재 본인의 셀을 선택하세요.' : '나눔 공동체를 선택하세요.'}</p>
+                  <div>
+                    {teams.filter((t) => t.kind === entry.visibility).map((t) => {
+                      const on = entry.teamIds.includes(t.id);
+                      return (
+                        <button key={t.id} type="button"
+                          className={`team-chip ${on ? 'on' : ''}`}
+                          onClick={() => updateEntry(ei, { teamIds: on ? entry.teamIds.filter((x) => x !== t.id) : [...entry.teamIds, t.id] })}>
+                          {on ? '✓ ' : ''}{t.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {!teams.some((t) => t.kind === entry.visibility) && (
+                    <p className="tiny" style={{ margin: '8px 0 0' }}>
+                      {entry.visibility === 'cell'
+                        ? '아직 속한 셀이 없습니다. 셀리더의 초대를 받아보세요.'
+                        : '아직 속한 나눔 공동체가 없습니다.'}
+                    </p>
+                  )}
+                </div>
+              )}
+              {entry.visibility === 'users' && ei === activeIdx && (
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <input type="text" className="share-user-search" placeholder="이름으로 검색 (예: 인터치A)" aria-label="공유할 사람 이름 검색" value={userQuery} onChange={(e) => setUserQuery(e.target.value)} />
+                  {userResults.map((u) => (
+                    <button key={u.id} className="btn subtle small" style={{ margin: '6px 6px 0 0' }}
+                      onClick={() => {
+                        if (!entry.sharedUsers.find((x) => x.id === u.id)) updateEntry(ei, { sharedUsers: [...entry.sharedUsers, u] });
+                        setUserQuery('');
+                      }}>
+                      + {u.display_id}
+                    </button>
+                  ))}
+                  <div style={{ marginTop: 8 }}>
+                    {entry.sharedUsers.map((u) => (
+                      <span key={u.id} className="pill" style={{ marginRight: 6 }}>
+                        {u.display_id}{' '}
+                        <button className="del" aria-label={`${u.display_id} 빼기`}
+                          onClick={() => updateEntry(ei, { sharedUsers: entry.sharedUsers.filter((x) => x.id !== u.id) })}><Icon name="x" size={12} /></button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              </div>
+
+              {!entry.saved && <p className="tiny center fade-in" style={{ margin: '0 0 8px', color: 'var(--sub)' }}>
+                처음 한 번만 눌러 주시면, 이후엔 자동으로 저장돼요.
+              </p>}
+              <button className="btn wide ink small" onClick={() => {
+                setActiveIdx(ei);
+                if (entry.saved) doSave(ei, false);
+                else save();
+              }} disabled={saving}>
+                {saving && ei === activeIdx ? '담는 중…' : entry.saved ? '수정하기' : '오늘의 감사 담기 🙏'}
+              </button>
+            </div>
+          ))}
+
+          {/* + 새 기록 추가 카드 */}
+          <div className="entry-page">
+            <button className="entry-add-card" onClick={addEntry} aria-label="새 감사 기록 추가">
+              <Icon name="plus" size={28} />
+              <span className="tiny" style={{ marginTop: 8, color: 'var(--sub)' }}>새 감사 추가</span>
+            </button>
+          </div>
         </div>
+
 
         {savedNote && <p className={`notice ${savedNoteFading ? 'fade-out' : 'fade-in'}`} style={{whiteSpace:'pre-line'}}>{savedNote}</p>}
-        {!saved && <p className="tiny center fade-in" style={{ margin: '0 0 8px', color: 'var(--sub)' }}>
-          처음 한 번만 눌러 주시면, 이후엔 자동으로 저장돼요.
-        </p>}
-        <button className="btn wide ink small" onClick={save} disabled={saving || (saved && isEmpty)}>
-          {saving ? '담는 중…' : saved ? '수정하기' : '오늘의 감사 담기 🙏'}
-        </button>
       </section>
       )}
 

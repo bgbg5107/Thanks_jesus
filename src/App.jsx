@@ -130,8 +130,28 @@ export default function App() {
   useEffect(() => {
     loadUnread();
     const t = setInterval(loadUnread, 60000);
-    return () => clearInterval(t);
-  }, [loadUnread]);
+
+    if (!session?.user) return () => clearInterval(t);
+
+    const channel = supabase
+      .channel('notifications-' + session.user.id)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${session.user.id}`,
+        },
+        () => loadUnread()
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(t);
+      supabase.removeChannel(channel);
+    };
+  }, [loadUnread, session]);
 
   // 주말(토·일)에 한 번, 우리 셀의 한 주 감사 요약을 알림으로 전한다
   useEffect(() => {

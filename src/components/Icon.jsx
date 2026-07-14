@@ -8,6 +8,7 @@ const PATHS = {
     </>
   ),
   x: <path d="M18 6 6 18M6 6l12 12" />,
+  plus: <path d="M12 5v14M5 12h14" />,
   heart: <path d="M19.8 4.6a5.5 5.5 0 0 0-7.8 0L12 4.7l-.1-.1a5.5 5.5 0 1 0-7.7 7.8l7.8 7.8 7.8-7.8a5.5 5.5 0 0 0 0-7.8Z" />,
   check: <path d="M20 6 9 17l-5-5" />,
   chevronDown: <path d="m6 9 6 6 6-6" />,
