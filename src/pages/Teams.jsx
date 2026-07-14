@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useApp } from '../App.jsx';
 import { supabase } from '../lib/supabase.js';
 import { appAlert, appConfirm } from '../components/Dialog.jsx';
+import Avatar from '../components/Avatar.jsx';
 import Icon from '../components/Icon.jsx';
 import Overlay from '../components/Overlay.jsx';
 
@@ -25,9 +26,9 @@ export default function Teams() {
 
   const loadMembers = useCallback(async (team) => {
     const { data } = await supabase.from('team_members')
-      .select('user_id, status, profiles:user_id(display_id)')
+      .select('user_id, status, profiles:user_id(id, display_id, avatar_url)')
       .eq('team_id', team.id).in('status', ['invited', 'accepted']);
-    const { data: leader } = await supabase.from('profiles').select('display_id').eq('id', team.leader_id).single();
+    const { data: leader } = await supabase.from('profiles').select('id, display_id, avatar_url').eq('id', team.leader_id).single();
     setMembers([
       { user_id: team.leader_id, status: 'leader', profiles: leader },
       ...(data || []).filter((m) => m.user_id !== team.leader_id),
@@ -42,7 +43,7 @@ export default function Teams() {
     if (!terms.length || !open) { setResults([]); return; }
     const t = setTimeout(async () => {
       const orExpr = terms.map((s) => `display_id.ilike.%${s}%`).join(',');
-      const { data } = await supabase.from('profiles').select('id, display_id')
+      const { data } = await supabase.from('profiles').select('id, display_id, avatar_url')
         .or(orExpr).limit(20);
       const existing = new Set(members.map((m) => m.user_id));
       setResults((data || []).filter((u) => !existing.has(u.id)));
@@ -171,13 +172,11 @@ export default function Teams() {
           {teams.map((t) => (
             <button type="button" className="team-item" key={t.id} onClick={() => setOpen(t)}>
               <span className="team-info">
+                <span className={`pill ${t.kind === 'cell' ? 'pill-cell' : 'pill-group'}`}>{KIND_KO[t.kind] || '공동체'}</span>
                 <span className="team-name">{t.name}</span>
-                <span className="team-meta">
-                  <span className={`pill ${t.kind === 'cell' ? 'pill-cell' : 'pill-group'}`}>{KIND_KO[t.kind] || '공동체'}</span>
-                  <span className="role-tag">{t.role}</span>
-                </span>
+                <span className="role-tag">{t.role}</span>
               </span>
-              <Icon name="chevronRight" size={18} style={{ color: 'var(--gray)' }} />
+              <Icon name="chevronRight" size={18} style={{ color: 'var(--gray)', flexShrink: 0 }} />
             </button>
           ))}
         </div>
@@ -231,9 +230,7 @@ export default function Teams() {
                 const isLead = m.status === 'leader';
                 return (
                   <div className="tm-member" key={m.user_id}>
-                    <div className={`tm-avatar ${isLead ? 'lead' : ''}`}>
-                      {(m.profiles?.display_id || '?')[0]}
-                    </div>
+                    <Avatar profile={m.profiles} size={44} />
                     <div className="tm-member-info">
                       <span className="tm-member-name">{m.profiles?.display_id || '알 수 없음'}</span>
                       <span className="tm-member-role">{role}</span>
@@ -255,7 +252,7 @@ export default function Teams() {
                   <div className="tm-results">
                     {results.map((u) => (
                       <button key={u.id} className="tm-result-btn" onClick={() => invite(u)}>
-                        <span className="tm-avatar sm">{u.display_id[0]}</span>
+                        <Avatar profile={u} size={32} />
                         {u.display_id}
                       </button>
                     ))}

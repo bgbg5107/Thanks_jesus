@@ -17,11 +17,11 @@ export default function Feed() {
   const [posts, setPosts] = useState(null);
   const [tab, setTab] = useState('all');   // 'all' | 팀 id
   const [zoom, setZoom] = useState(null);  // 확대 보기 사진 URL
-  const [pastOpen, setPastOpen] = useState(false);  // 지난 나눔 펼침
+  const [pastOpen, setPastOpen] = useState(true);  // 지난 나눔 펼침
   const tabDefaulted = useRef(false);
 
   // 탭을 바꾸면 지난 나눔은 다시 접는다
-  useEffect(() => { setPastOpen(false); }, [tab]);
+  useEffect(() => { setPastOpen(true); }, [tab]);
 
   // 탭 순서: 전체 → 셀 → 나눔 공동체
   const sortedTeams = [...teams.filter((t) => t.kind === 'cell'), ...teams.filter((t) => t.kind !== 'cell')];

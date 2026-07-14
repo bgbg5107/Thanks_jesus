@@ -597,14 +597,15 @@ export default function Home() {
         </div>
 
         {/* 페이지 인디케이터 (상단) */}
-        {entries.length > 1 && (
-          <div className="entry-dots">
-            {entries.map((e, i) => (
-              <button key={e._tempId} className={`entry-dot${i === activeIdx ? ' on' : ''}`}
-                aria-label={`감사 ${i + 1}`} onClick={() => scrollToIdx(i)} />
-            ))}
-            <span className="entry-dot add" aria-hidden="true" />
-          </div>
+        <div className="entry-dots">
+          {entries.map((e, i) => (
+            <button key={e._tempId} className={`entry-dot${i === activeIdx ? ' on' : ''}`}
+              aria-label={`감사 ${i + 1}`} onClick={() => scrollToIdx(i)} />
+          ))}
+          <span className="entry-dot add" aria-hidden="true" />
+        </div>
+        {entries.length === 1 && (
+          <p className="tiny center" style={{ margin: '0 0 2px', color: 'var(--sub)' }}>오른쪽으로 밀어서 감사 추가 →</p>
         )}
 
         {/* 다중 기록 스와이프 영역 */}

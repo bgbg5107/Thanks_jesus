@@ -134,6 +134,7 @@ export default function CalendarPage() {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
   const monthEntries = entries.filter((e) => e.date.startsWith(monthKey));
+  const countItems = (arr) => arr.reduce((sum, e) => sum + (e.contents || []).filter((c) => itemText(c)).length, 0);
 
   const dist = useMemo(() => {
     const m = {};
@@ -240,6 +241,12 @@ export default function CalendarPage() {
     lastEditSaved.current = '';
     setEmoOpen(false);
     setEditNote('');
+    // 새로 추가된 카드로 스크롤
+    setTimeout(() => {
+      if (detailScrollRef.current) {
+        detailScrollRef.current.scrollTo({ left: newIdx * detailScrollRef.current.offsetWidth, behavior: 'smooth' });
+      }
+    }, 80);
   }
 
   // 기록 수정 저장
@@ -457,8 +464,8 @@ export default function CalendarPage() {
 
       <section className="card fade-in no-print">
         <div className="stats">
-          <div className="stat"><div className="num">{monthEntries.length}</div><div className="lbl">이번 달 기록</div></div>
-          <div className="stat"><div className="num">{yearEntries.length}</div><div className="lbl">{String(year).slice(2)}년도 전체 기록</div></div>
+          <div className="stat"><div className="num">{countItems(monthEntries)}</div><div className="lbl">이번 달 감사</div></div>
+          <div className="stat"><div className="num">{countItems(yearEntries)}</div><div className="lbl">{String(year).slice(2)}년도 전체 감사</div></div>
         </div>
         {dist.length > 0 && (
           <div className="dist">
@@ -546,7 +553,10 @@ export default function CalendarPage() {
         </section>
       )}
 
-      <button className="btn ink wide no-print fade-in" onClick={() => setExp(true)}>나의 감사 기록 내보내기</button>
+      <button className="no-print fade-in" onClick={() => setExp(true)}
+        style={{ background:'none', border:'none', color:'var(--gray)', fontSize:'var(--fs-xs)', cursor:'pointer', padding:'12px 0 4px', width:'100%', textAlign:'center', letterSpacing:'0.02em' }}>
+        나의 감사 기록 내보내기
+      </button>
 
       {exp && (
         <Overlay className="no-print" label="감사 기록 내보내기" onClose={() => setExp(false)}>
@@ -593,15 +603,14 @@ export default function CalendarPage() {
               </span>
             </div>
 
-            {/* 다중 기록: 인디케이터 dots */}
-            {detailEntries.length > 1 && (
-              <div className="entry-dots" style={{ paddingBottom: 8 }}>
-                {detailEntries.map((_, i) => (
-                  <button key={i} className={`entry-dot${i === detailIdx ? ' on' : ''}`}
-                    aria-label={`감사 ${i + 1}`} onClick={() => scrollDetailTo(i)} />
-                ))}
-              </div>
-            )}
+            {/* 기록 인디케이터 dots */}
+            <div className="entry-dots" style={{ paddingBottom: 8 }}>
+              {detailEntries.map((_, i) => (
+                <button key={i} className={`entry-dot${i === detailIdx ? ' on' : ''}`}
+                  aria-label={`감사 ${i + 1}`} onClick={() => scrollDetailTo(i)} />
+              ))}
+              <span className="entry-dot add" aria-hidden="true" />
+            </div>
 
             {/* 수평 스와이프 캐러셀 — 홈 페이지와 동일한 구조 */}
             <div className="detail-entry-scroll" ref={detailScrollRef} onScroll={onDetailScroll}>
@@ -716,10 +725,10 @@ export default function CalendarPage() {
             <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', alignItems: 'center', marginTop: 16, marginBottom: 8 }}>
               <div>
                 {!activeDetail?.isNew && detailEntries.length > 1 && (
-                  <button className="btn subtle small" onClick={async () => {
+                  <button className="btn subtle small" aria-label="삭제" onClick={async () => {
                     const ok = await appConfirm('이 감사 기록을 지울까요?');
                     if (ok) removeEntry();
-                  }}>삭제</button>
+                  }}><Icon name="trash" size={18} style={{ color: 'var(--alert)' }} /></button>
                 )}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
