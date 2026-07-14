@@ -2,6 +2,11 @@ import { useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import Icon from '../components/Icon.jsx';
 
+// iOS Safari에서 PWA로 설치되지 않은 경우 감지
+const isIosSafari = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+const isStandalone = window.navigator.standalone === true;
+const showPwaHint = isIosSafari && !isStandalone;
+
 export default function Login() {
   const [mode, setMode] = useState('login'); // login | signup | forgot
   const [entered, setEntered] = useState(false); // '주님 감사합니다!'를 눌러 폼이 올라온 상태
@@ -85,7 +90,7 @@ export default function Login() {
 
   return (
     <div className={`login-page${entered ? ' entered' : ''}`}>
-      <header className="login-hero fade-in">
+      <header className="login-hero fade-in" onClick={() => { if (entered) { setEntered(false); switchMode('login'); } }}>
         <div className="login-hero-top">
           {mode !== 'login' && (
             <button type="button" className="login-back" aria-label="로그인으로 돌아가기" onClick={() => switchMode('login')}>
@@ -164,6 +169,11 @@ export default function Login() {
             <button type="button" className="login-link" onClick={() => switchMode('login')}>로그인으로 돌아가기</button>
           )}
         </div>
+        {showPwaHint && (
+          <p className="pwa-hint">
+            <strong>홈 화면에 추가</strong> 하시면 로그인이 유지됩니다.
+          </p>
+        )}
       </form>
       )}
     </div>

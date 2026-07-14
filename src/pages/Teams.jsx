@@ -115,6 +115,24 @@ export default function Teams() {
 
   const isLeader = open && open.leader_id === uid;
 
+  const [editingName, setEditingName] = useState(false);
+  const [editName, setEditName] = useState('');
+
+  function startEditName() {
+    setEditName(open.name);
+    setEditingName(true);
+  }
+
+  async function saveName() {
+    const nm = editName.trim();
+    if (!nm || nm === open.name) { setEditingName(false); return; }
+    const { error } = await supabase.from('teams').update({ name: nm }).eq('id', open.id);
+    if (error) { appAlert(error.message); return; }
+    setOpen((prev) => ({ ...prev, name: nm }));
+    await loadTeams();
+    setEditingName(false);
+  }
+
   return (
     <>
       <header className="top"><h1>감사 나눔 공동체</h1></header>
@@ -170,8 +188,32 @@ export default function Teams() {
           <div className="modal team-modal" onClick={(e) => e.stopPropagation()}>
             {/* 헤더 */}
             <div className="tm-header">
-              <div>
-                <h3 className="tm-title">{open.name}</h3>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {editingName ? (
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                    <input
+                      type="text"
+                      aria-label="공동체 이름 수정"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveName(); if (e.key === 'Escape') setEditingName(false); }}
+                      autoFocus
+                      style={{ flex: 1, fontSize: 'var(--fs-md)' }}
+                    />
+                    <button className="btn small ink" onClick={saveName}>저장</button>
+                    <button className="btn small" onClick={() => setEditingName(false)}>취소</button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    <h3 className="tm-title" style={{ margin: 0 }}>{open.name}</h3>
+                    {isLeader && (
+                      <button onClick={startEditName} aria-label="공동체 이름 수정"
+                        style={{ background: 'none', border: 'none', padding: '4px', cursor: 'pointer', color: 'var(--gray)', lineHeight: 1 }}>
+                        <Icon name="edit" size={16} />
+                      </button>
+                    )}
+                  </div>
+                )}
                 <span className={`pill ${open.kind === 'cell' ? 'pill-cell' : 'pill-group'}`}>{word(open)}</span>
               </div>
               <button className="tm-close" onClick={() => setOpen(null)} aria-label="닫기">

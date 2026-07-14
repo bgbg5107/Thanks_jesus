@@ -454,7 +454,7 @@ export default function Home() {
         </div>
         {(visibility === 'cell' || visibility === 'group') && (
           <div className="field" style={{ textAlign: 'center', margin: 0, padding: '10px 0' }}>
-            <p className="tiny" style={{ margin: '0 0 8px' }}>{visibility === 'cell' ? '현재 본인의 셀을 선택하세요.' : '나눔 공동체를 선택하세요.'}</p>
+            <p className="tiny" style={{ margin: '10px 0 8px' }}>{visibility === 'cell' ? '현재 본인의 셀을 선택하세요.' : '나눔 공동체를 선택하세요.'}</p>
             <div>
               {teams.filter((t) => t.kind === visibility).map((t) => {
                 const on = teamIds.includes(t.id);
