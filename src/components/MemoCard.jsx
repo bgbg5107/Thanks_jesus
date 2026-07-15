@@ -540,6 +540,8 @@ export default function MemoCard({ uid }) {
             </div>
 
             <div className="memo-tools">
+              <button type="button" className="tb" title="되돌리기" aria-label="되돌리기"
+                onMouseDown={(e) => e.preventDefault()} onClick={() => fmt('undo')}><Icon name="undo" size={17} /></button>
               <button type="button" className="tb" title="굵게" aria-label="굵게"
                 onMouseDown={(e) => e.preventDefault()} onClick={() => fmt('bold')}><b>가</b></button>
               <button type="button" className="tb" title="글자 작게" aria-label="글자 작게"
