@@ -167,8 +167,6 @@ export default function MemoCard({ uid }) {
     if (bodyRef.current) {
       bodyRef.current.innerHTML = sanitize(editing.content);
       wrapFirstLine(bodyRef.current);
-      // 말씀 블록은 통째로만 다뤄지도록 (저장 시 sanitize가 걷어낸 속성 복원)
-      bodyRef.current.querySelectorAll('.vq').forEach((v) => v.setAttribute('contenteditable', 'false'));
       // 맨 위가 말씀이면 그 앞에 빈 줄 — 말씀 위로 돌아가 적을 수 있게
       if (bodyRef.current.firstElementChild?.classList?.contains('vq')) {
         const d = document.createElement('div');
@@ -293,31 +291,27 @@ export default function MemoCard({ uid }) {
     syncBody();
   }
 
-  // 백스페이스/Delete로 말씀 블록(.vq) 삭제 지원
+  // 말씀 블록(.vq)은 안에서 자유롭게 고칠 수 있다.
+  // 블록 바로 아랫줄 맨 앞에서 Backspace하면 블록을 통째로 삭제(undo 가능) —
+  // 글이 말씀 블록 안으로 딸려 들어가는 것도 막아 준다.
   function handleBodyKeyDown(e) {
-    if (e.key !== 'Backspace' && e.key !== 'Delete') return;
+    if (e.key !== 'Backspace') return;
     const sel = window.getSelection();
     if (!sel?.rangeCount) return;
     const r = sel.getRangeAt(0);
+    if (!r.collapsed || r.startOffset !== 0) return;
     const node = r.startContainer;
     const block = node?.nodeType === 3 ? node.parentElement : node;
-    // 블록을 통째로 선택해 delete — 되돌리기(undo)가 되도록 execCommand를 거친다
-    const removeVq = (target) => {
+    if (block?.closest('.vq')) return; // 블록 안은 일반 편집에 맡긴다
+    const prev = block?.previousElementSibling;
+    if (prev?.classList?.contains('vq') && bodyRef.current?.contains(prev)) {
       e.preventDefault();
       const dr = document.createRange();
-      dr.selectNode(target);
+      dr.selectNode(prev);
       sel.removeAllRanges();
       sel.addRange(dr);
       document.execCommand('delete');
       syncBody();
-    };
-    // 커서가 .vq 안이면 블록 전체 삭제
-    const vq = block?.closest('.vq');
-    if (vq && bodyRef.current?.contains(vq)) { removeVq(vq); return; }
-    // 커서가 .vq 바로 뒤에 있을 때 Backspace
-    if (e.key === 'Backspace' && r.collapsed && r.startOffset === 0) {
-      const prev = block?.previousElementSibling;
-      if (prev?.classList?.contains('vq')) removeVq(prev);
     }
   }
 
@@ -389,7 +383,7 @@ export default function MemoCard({ uid }) {
       pre.setEnd(range.startContainer, range.startOffset);
       if (!pre.toString().trim()) lead = '<div><br></div>';
     } catch { /* 판단이 어려우면 빈 줄 없이 */ }
-    const html = `${lead}<blockquote class="${color ? `vq ${color}` : 'vq'}" contenteditable="false">`
+    const html = `${lead}<blockquote class="${color ? `vq ${color}` : 'vq'}">`
       + `<span class="vq-t">${escHtml(text)}</span>`
       + `<span class="vq-r">${escHtml(`${passage.label} (개역한글)`)}</span>`
       + '</blockquote><div><br></div>';

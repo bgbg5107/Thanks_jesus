@@ -76,6 +76,8 @@
 - **메모 본문 DOM 조작은 반드시 execCommand(insertHTML/delete)를 거칠 것** —
   직접 insertNode/remove 하면 브라우저 undo(Cmd+Z) 스택이 끊긴다 (2026-07 지적).
   말씀 블록이 맨 위면 앞에 빈 줄을 자동 확보해 위로 돌아가 적을 수 있게 한다.
+- **담은 말씀도 일반 텍스트처럼 선택·편집 가능해야 한다** — `contenteditable=false` 금지
+  (iOS에서 선택 자체가 안 됨, 2026-07 지적). 블록 통삭제는 바로 아랫줄 맨 앞 Backspace.
 - **메모 편집 키보드 대응(iOS)**: 키보드가 떠도 서식 툴바가 보여야 함 —
   `visualViewport`에 맞춰 `.memo-sheet` 높이를 줄이는 방식(MemoCard의 fit 이펙트,
   `kb-open` 클래스). 100dvh만 믿지 말 것.

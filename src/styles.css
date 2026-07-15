@@ -258,7 +258,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible,
 .gc-del-btn:active { transform: scale(0.92); }
 
 /* 오늘의 메모 — 전체 화면 종이 한 장 (아이폰 메모장처럼 담백하게) */
-.overlay.sheet { padding: 0; align-items: stretch; animation: none; }
+.overlay.sheet { padding: 0; align-items: stretch; animation: none; background: var(--card); }
 .memo-sheet {
   width: 100%; height: 100dvh; background: var(--card);
   display: flex; flex-direction: column; overscroll-behavior: contain;
