@@ -69,6 +69,16 @@
   3초 자동 저장·비우면 조용히 삭제, 오프라인 초안은 localStorage.
 - **말씀 담기(개역한글 전권)**: 메모 본문에 툴바 📖(말씀 찾기 팝업, `VersePicker.jsx`)
   또는 "요 3:16" 타이핑 인식 칩으로 구절 삽입(라임 인용 블록 `.vq`, 명조).
+  말씀 블록에는 ❝ 인용부호(`.vq::before`) — 말씀임이 한눈에 보이게 (2026-07 요청).
+  말씀 찾기는 타이핑 외에 **책→장→절 짚어 고르기**(구약/신약 그리드, 절은 시작→끝
+  두 번 탭으로 범위)와 **최근 담은 말씀 8개**(localStorage `verse-recent`,
+  `bible.js`의 recentVerses/rememberVerse) 재담기를 지원.
+- **메모 본문 DOM 조작은 반드시 execCommand(insertHTML/delete)를 거칠 것** —
+  직접 insertNode/remove 하면 브라우저 undo(Cmd+Z) 스택이 끊긴다 (2026-07 지적).
+  말씀 블록이 맨 위면 앞에 빈 줄을 자동 확보해 위로 돌아가 적을 수 있게 한다.
+- **메모 편집 키보드 대응(iOS)**: 키보드가 떠도 서식 툴바가 보여야 함 —
+  `visualViewport`에 맞춰 `.memo-sheet` 높이를 줄이는 방식(MemoCard의 fit 이펙트,
+  `kb-open` 클래스). 100dvh만 믿지 말 것.
   본문 데이터는 `public/bible/krv.json`(저작권 만료된 개역한글판, 1189장 31,102절 검증됨)
   — 첫 사용 시 내려받아 IndexedDB 보관(`lib/bible.js`), 합쳐진 절(롬 9:1-2 등)·(없음) 절 처리 포함.
   개역개정은 대한성서공회 저작권 때문에 넣지 않기로 결정(2026-07).

@@ -179,7 +179,10 @@ input:focus-visible, textarea:focus-visible, select:focus-visible,
 .accent-card.lav  { background: var(--lav);  color: var(--accent-ink); }
 .accent-card.lime { background: var(--lime); color: var(--accent-ink); }
 .accent-card.sky  { background: color-mix(in srgb, var(--sky) 50%, transparent);  color: var(--accent-ink); }
-.accent-card.verse { background: #fff; color: var(--accent-ink); }
+.accent-card.verse { background: var(--card); color: var(--ink); }
+.accent-card.verse .vtext { color: var(--ink); }
+.accent-card.verse .vref { color: var(--brand); }
+.accent-card.verse .vlabel { color: var(--gray); }
 
 /* 감사 카드 가로 스크롤 */
 .gratitude-scroll {
@@ -295,6 +298,8 @@ input:focus-visible, textarea:focus-visible, select:focus-visible,
   scrollbar-width: none;
 }
 .memo-tools::-webkit-scrollbar { display: none; }
+/* 키보드가 떠 있는 동안(kb-open)은 홈 인디케이터 여백이 필요 없다 */
+.memo-sheet.kb-open .memo-tools { padding-bottom: 10px; }
 .memo-tools .sp { flex: 1; }
 .memo-tools .tb {
   width: 40px; height: 40px; border-radius: 50%; border: none; padding: 0;
@@ -359,6 +364,15 @@ input:focus-visible, textarea:focus-visible, select:focus-visible,
   border-left: 3px solid var(--vqc);
   border-radius: 12px; margin: 8px 0; padding: 10px 14px;
 }
+/* 인용부호 — 말씀임이 한눈에 보이도록 (기존에 담아 둔 말씀에도 그대로 적용) */
+.vq::before {
+  content: '\275d';
+  display: block;
+  font-family: 'Noto Serif KR', 'Nanum Myeongjo', serif;
+  font-size: var(--fs-xl); line-height: 1;
+  margin-bottom: 4px;
+  color: color-mix(in srgb, var(--vqc) 45%, var(--ink));
+}
 .vq-c2 { --vqc: var(--lav); }
 .vq-c3 { --vqc: var(--pop); }
 .vq-c4 { --vqc: var(--pink); }
@@ -372,6 +386,37 @@ input:focus-visible, textarea:focus-visible, select:focus-visible,
 .memo-body .vq, .memo-view .vq { color: inherit; border-left: 3px solid var(--vqc); }
 .vq .vq-t { display: block; font-family: 'Noto Serif KR', 'Nanum Myeongjo', serif; line-height: 1.9; word-break: keep-all; }
 .vq .vq-r { display: block; margin-top: 6px; font-size: var(--fs-xs); text-align: right; opacity: 0.8; }
+
+/* 말씀 찾기 — 책·장·절 짚어 고르기 + 최근 담은 말씀 */
+.vp-input::placeholder { font-size: var(--fs-sm); }
+.vp-label { margin: 14px 0 6px; font-size: var(--fs-xs); color: var(--gray); }
+.vp-recent { display: flex; flex-wrap: wrap; gap: 8px; }
+.vp-chip {
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+  border-radius: 999px; padding: 8px 14px; min-height: 40px;
+  font-family: inherit; font-size: var(--fs-sm); cursor: pointer;
+  transition: background var(--t), color var(--t);
+}
+.vp-chip:active { background: var(--ink); border-color: var(--ink); color: var(--card); }
+.vp-crumb {
+  display: flex; align-items: center; gap: 4px;
+  margin-top: 12px; color: var(--gray); font-size: var(--fs-sm);
+}
+.vp-crumb button {
+  border: none; background: none; color: var(--brand); cursor: pointer;
+  font-family: inherit; font-size: var(--fs-md); font-weight: 700;
+  padding: 8px 4px; min-height: 40px;
+}
+.vp-scroll { max-height: min(46vh, 380px); overflow-y: auto; margin-top: 4px; padding-right: 8px; }
+.vp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+.vp-grid.nums { grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); }
+.vp-grid button {
+  border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  border-radius: 10px; min-height: 40px; padding: 8px 4px;
+  font-family: inherit; font-size: var(--fs-sm); word-break: keep-all; cursor: pointer;
+  transition: background var(--t), color var(--t), border-color var(--t);
+}
+.vp-grid button.on { background: var(--ink); border-color: var(--ink); color: var(--card); }
 
 /* 타이핑 중 말씀 인식 칩 — 참조 텍스트 바로 아래 팝업 */
 .memo-hint {
@@ -403,6 +448,7 @@ input:focus-visible, textarea:focus-visible, select:focus-visible,
 .accent-card .vtext { color: var(--accent-ink); }
 .accent-card .vlabel, .accent-card .vref { color: color-mix(in srgb, var(--accent-ink) 80%, transparent); }
 
+/* 말씀 캐러셀 */
 /* 버튼 */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;

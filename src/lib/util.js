@@ -39,6 +39,13 @@ export function verseOfDay(verses, dateStr = todayStr()) {
   return verses[h % verses.length];
 }
 
+export function verseOfDayIndex(verses, dateStr = todayStr()) {
+  if (!verses?.length) return 0;
+  let h = 0;
+  for (const c of dateStr) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return h % verses.length;
+}
+
 export function randomVerse(verses) {
   if (!verses?.length) return null;
   return verses[Math.floor(Math.random() * verses.length)];

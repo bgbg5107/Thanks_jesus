@@ -54,6 +54,21 @@ ALIASES.sort((a, b) => b[0].length - a[0].length);
 
 export const bookName = (b) => BOOKS[b - 1][0];
 
+// 최근 담은 말씀 — 이 기기에서만 조용히 기억한다 (최대 8개)
+const RECENT_KEY = 'verse-recent';
+export const refLabel = (r) => `${bookName(r.b)} ${r.c}:${r.v1}${r.v2 !== r.v1 ? `-${r.v2}` : ''}`;
+export function recentVerses() {
+  try {
+    const list = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]');
+    return Array.isArray(list) ? list.filter((r) => r && r.b >= 1 && r.b <= 66 && r.c && r.v1) : [];
+  } catch { return []; }
+}
+export function rememberVerse(ref) {
+  const item = { b: ref.b, c: ref.c, v1: ref.v1, v2: ref.v2 || ref.v1 };
+  const rest = recentVerses().filter((r) => !(r.b === item.b && r.c === item.c && r.v1 === item.v1 && r.v2 === item.v2));
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify([item, ...rest].slice(0, 8))); } catch { /* 조용히 넘어간다 */ }
+}
+
 // 개역한글에서 "(없음)"으로 표기되는 절들 (책:장:절)
 const NONE = new Set([
   '40:18:11', '41:9:44', '41:9:46', '41:11:26', '41:15:28',

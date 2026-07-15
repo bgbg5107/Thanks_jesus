@@ -189,7 +189,7 @@ export default function Home() {
       entries.forEach((e) => { if (e.saved) done.add(date); });
       setWeekDone(done);
     })();
-  }, [online, uid, entries.length]);  // eslint-disable-line react-hooks/exhaustive-deps
+  }, [online, uid, entries.length, entries.filter(e => e.saved).length]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // 이름으로 공유 대상 검색
   useEffect(() => {
@@ -481,7 +481,7 @@ export default function Home() {
       {daily && (
         <>
           <p className="home-title" style={{ marginTop: 4 }}>🌿 오늘의 말씀</p>
-          <section className="accent-card lime verse fade-in" style={{ padding: '30px 24px', textAlign: 'center' }}>
+          <section className="accent-card lime verse">
             <p className="vtext" style={{ margin: 0 }}>{daily.text}</p>
             <div className="vref">{daily.reference}</div>
           </section>
@@ -605,7 +605,7 @@ export default function Home() {
           <span className="entry-dot add" aria-hidden="true" />
         </div>
         {entries.length === 1 && (
-          <p className="tiny center" style={{ margin: '0 0 2px', color: 'var(--sub)' }}>오른쪽으로 밀어서 감사 추가 →</p>
+          <p className="tiny center" style={{ margin: '0 0 2px', color: 'var(--sub)' }}>새로운 감사 항목 추가할 수 있어요 →</p>
         )}
 
         {/* 다중 기록 스와이프 영역 */}

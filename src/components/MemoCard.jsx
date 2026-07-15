@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { photoUrl, supabase } from '../lib/supabase.js';
 import { fmtKoDate, todayStr } from '../lib/util.js';
 import { filesToData, uploadPhotos } from '../lib/offline.js';
-import { bookName, getPassage, parseRef } from '../lib/bible.js';
+import { bookName, getPassage, parseRef, rememberVerse } from '../lib/bible.js';
 import { toJpeg } from './ItemsEditor.jsx';
 import Lightbox from './Lightbox.jsx';
 import VersePicker from './VersePicker.jsx';
@@ -18,7 +18,10 @@ const HILITES = ['#ffe08a', '#c9f29b', '#ffc9dc', '#e3c8f8'];
 const VQ_CLASSES = ['vq', 'vq-t', 'vq-r', 'vq-c2', 'vq-c3', 'vq-c4', 'vq-c5', 'vq-c6', 'vq-c7', 'vq-c8', 'vq-c9', 'vq-c10', 'vq-c11'];
 const VQ_COLORS = ['', 'vq-c2', 'vq-c3', 'vq-c4', 'vq-c5', 'vq-c6', 'vq-c7', 'vq-c8', 'vq-c9', 'vq-c10', 'vq-c11'];
 
-const stripHtml = (h) => (h || '').replace(/<[^>]*>/g, '');
+// HTML 엔티티(&nbsp; 등)를 실제 글자로 — 제목·빈 메모 판정에 태그 조각이 새지 않게
+const decodeEnt = (s) => { const t = document.createElement('textarea'); t.innerHTML = s; return t.value; };
+const escHtml = (s) => (s || '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+const stripHtml = (h) => decodeEnt((h || '').replace(/<[^>]*>/g, ''));
 const newMemo = (date) => ({ id: crypto.randomUUID(), date, title: '', subtitle: '', content: '', photos: [] });
 const isEmptyMemo = (m) => !m.title.trim() && !m.subtitle.trim() && !stripHtml(m.content).trim() && !m.photos.length;
 
@@ -60,6 +63,7 @@ export default function MemoCard({ uid }) {
   const savedRange = useRef(null);
   const bodyRef = useRef(null);
   const fileRef = useRef(null);
+  const sheetRef = useRef(null);
 
   // 오늘 메모 로드 (서버 → 미전송 로컬 초안 병합)
   useEffect(() => {
@@ -163,8 +167,41 @@ export default function MemoCard({ uid }) {
     if (bodyRef.current) {
       bodyRef.current.innerHTML = sanitize(editing.content);
       wrapFirstLine(bodyRef.current);
+      // 말씀 블록은 통째로만 다뤄지도록 (저장 시 sanitize가 걷어낸 속성 복원)
+      bodyRef.current.querySelectorAll('.vq').forEach((v) => v.setAttribute('contenteditable', 'false'));
+      // 맨 위가 말씀이면 그 앞에 빈 줄 — 말씀 위로 돌아가 적을 수 있게
+      if (bodyRef.current.firstElementChild?.classList?.contains('vq')) {
+        const d = document.createElement('div');
+        d.appendChild(document.createElement('br'));
+        bodyRef.current.prepend(d);
+      }
     }
   }, [editing]);
+
+  // iOS는 키보드가 떠도 뷰포트 높이(100dvh)가 줄지 않아 하단 서식 툴바가 키보드에 가려진다.
+  // visualViewport에 맞춰 시트 높이를 줄여 툴바가 항상 키보드 위에 보이게 한다.
+  const editorOpen = !!editing;
+  useEffect(() => {
+    if (!editorOpen) return undefined;
+    const vv = window.visualViewport;
+    if (!vv) return undefined;
+    const fit = () => {
+      const s = sheetRef.current;
+      if (!s) return;
+      const kb = window.innerHeight - vv.height - vv.offsetTop > 50;
+      if (kb) s.style.animation = 'none'; // 등장 애니메이션(fill: both)의 transform이 덮어쓰지 않게
+      s.style.height = kb ? `${vv.height}px` : '';
+      s.style.transform = kb && vv.offsetTop ? `translateY(${vv.offsetTop}px)` : '';
+      s.classList.toggle('kb-open', kb);
+    };
+    fit();
+    vv.addEventListener('resize', fit);
+    vv.addEventListener('scroll', fit);
+    return () => {
+      vv.removeEventListener('resize', fit);
+      vv.removeEventListener('scroll', fit);
+    };
+  }, [editorOpen]);
 
   function closeEditor() {
     const m = editing;
@@ -234,19 +271,14 @@ export default function MemoCard({ uid }) {
     if (sel?.rangeCount) {
       const node = sel.anchorNode;
       const block = node?.nodeType === 3 ? node.parentElement : node;
-      // 말씀 블록(.vq) — 서식만 벗기고 텍스트는 유지
+      // 말씀 블록(.vq) — 서식만 벗기고 텍스트는 유지 (insertHTML을 거쳐 되돌리기 가능)
       const vq = block?.closest('.vq');
       if (vq && el.contains(vq)) {
-        const text = vq.textContent || '';
-        const div = document.createElement('div');
-        div.textContent = text;
-        vq.replaceWith(div);
-        // 커서를 텍스트 끝으로
         const r = document.createRange();
-        r.selectNodeContents(div);
-        r.collapse(false);
+        r.selectNode(vq);
         sel.removeAllRanges();
         sel.addRange(r);
+        document.execCommand('insertHTML', false, `<div>${escHtml(vq.textContent || '')}</div>`);
         syncBody();
         return;
       }
@@ -269,22 +301,23 @@ export default function MemoCard({ uid }) {
     const r = sel.getRangeAt(0);
     const node = r.startContainer;
     const block = node?.nodeType === 3 ? node.parentElement : node;
+    // 블록을 통째로 선택해 delete — 되돌리기(undo)가 되도록 execCommand를 거친다
+    const removeVq = (target) => {
+      e.preventDefault();
+      const dr = document.createRange();
+      dr.selectNode(target);
+      sel.removeAllRanges();
+      sel.addRange(dr);
+      document.execCommand('delete');
+      syncBody();
+    };
     // 커서가 .vq 안이면 블록 전체 삭제
     const vq = block?.closest('.vq');
-    if (vq && bodyRef.current?.contains(vq)) {
-      e.preventDefault();
-      vq.remove();
-      syncBody();
-      return;
-    }
+    if (vq && bodyRef.current?.contains(vq)) { removeVq(vq); return; }
     // 커서가 .vq 바로 뒤에 있을 때 Backspace
     if (e.key === 'Backspace' && r.collapsed && r.startOffset === 0) {
       const prev = block?.previousElementSibling;
-      if (prev?.classList?.contains('vq')) {
-        e.preventDefault();
-        prev.remove();
-        syncBody();
-      }
+      if (prev?.classList?.contains('vq')) removeVq(prev);
     }
   }
 
@@ -338,37 +371,33 @@ export default function MemoCard({ uid }) {
     } else setHint(null);
   }
 
-  // 말씀 블록을 range 위치에 삽입
+  // 말씀 블록을 range 위치에 삽입 — execCommand(insertHTML)로 넣어 되돌리기(undo)가 된다
   function insertPassage(range, passage) {
-    const bq = document.createElement('blockquote');
     // 색은 무작위로 다양하게 — 단, 바로 앞 블록과는 겹치지 않게
     const last = [...(bodyRef.current?.querySelectorAll('.vq') || [])].pop();
     const lastColor = last ? (VQ_COLORS.find((c) => c && last.classList.contains(c)) || '') : null;
     const pool = VQ_COLORS.filter((c) => c !== lastColor);
     const color = pool[Math.floor(Math.random() * pool.length)];
-    bq.className = color ? `vq ${color}` : 'vq';
-    bq.setAttribute('contenteditable', 'false'); // 저장 시 sanitize가 속성을 걷어낸다
-    const t = document.createElement('span');
-    t.className = 'vq-t';
-    t.textContent = passage.items.length > 1
+    const text = passage.items.length > 1
       ? passage.items.map((i) => `${i.n} ${i.text}`).join(' ')
       : passage.items[0].text;
-    const ref = document.createElement('span');
-    ref.className = 'vq-r';
-    ref.textContent = `${passage.label} (개역한글)`;
-    bq.append(t, ref);
-    range.deleteContents();
-    range.insertNode(bq);
-    const after = document.createElement('div');
-    after.appendChild(document.createElement('br'));
-    bq.after(after);
-    const sel = window.getSelection();
-    const nr = document.createRange();
-    nr.setStart(after, 0);
-    nr.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(nr);
+    // 삽입 지점 앞에 아무 글도 없으면 빈 줄을 함께 넣는다 — 말씀 위로 돌아가 적을 수 있게
+    let lead = '';
+    try {
+      const pre = document.createRange();
+      pre.selectNodeContents(bodyRef.current);
+      pre.setEnd(range.startContainer, range.startOffset);
+      if (!pre.toString().trim()) lead = '<div><br></div>';
+    } catch { /* 판단이 어려우면 빈 줄 없이 */ }
+    const html = `${lead}<blockquote class="${color ? `vq ${color}` : 'vq'}" contenteditable="false">`
+      + `<span class="vq-t">${escHtml(text)}</span>`
+      + `<span class="vq-r">${escHtml(`${passage.label} (개역한글)`)}</span>`
+      + '</blockquote><div><br></div>';
     bodyRef.current?.focus();
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.execCommand('insertHTML', false, html);
     syncBody();
   }
 
@@ -385,6 +414,7 @@ export default function MemoCard({ uid }) {
     range.setStart(h.node, h.offset - h.ref.text.length);
     range.setEnd(h.node, h.offset);
     insertPassage(range, p);
+    rememberVerse(h.ref);
   }
 
   function openPicker() {
@@ -394,7 +424,7 @@ export default function MemoCard({ uid }) {
     setPicker(true);
   }
 
-  function insertFromPicker(passage) {
+  function insertFromPicker(passage, ref) {
     setPicker(false);
     let range = savedRange.current;
     if (!range || !bodyRef.current?.contains(range.startContainer)) {
@@ -403,6 +433,7 @@ export default function MemoCard({ uid }) {
       range.collapse(false);
     }
     insertPassage(range, passage);
+    if (ref) rememberVerse(ref);
   }
 
   // ── 사진 ──────────────────────────────────────────────────
@@ -434,11 +465,12 @@ export default function MemoCard({ uid }) {
 
   const firstLine = (html) => {
     if (!html) return '';
-    const text = html
+    const text = decodeEnt(html
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<(div|p|li|blockquote)[^>]*>/gi, '\n')
       .replace(/<\/(div|p|li|blockquote)>/gi, '\n')
-      .replace(/<[^>]*>/g, '')
+      .replace(/<[^>]*>/g, ''))
+      .replace(/\u00a0/g, ' ')
       .trim();
     return text.split('\n').find((l) => l.trim())?.trim() || '';
   };
@@ -479,7 +511,7 @@ export default function MemoCard({ uid }) {
       {/* 편집 화면 — 전체 화면 종이 한 장 (아이폰 메모장처럼, 첫 줄이 제목이 된다) */}
       {editing && (
         <Overlay className="sheet" label="메모 쓰기" onClose={closeEditor}>
-          <div className="memo-sheet" onClick={(e) => e.stopPropagation()}>
+          <div className="memo-sheet" ref={sheetRef} onClick={(e) => e.stopPropagation()}>
             <header className="memo-top">
               <button type="button" className="memo-back" onClick={closeEditor}>
                 <Icon name="chevronLeft" size={18} /> {fromHistory.current ? '목록으로' : '메모'}
